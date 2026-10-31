@@ -193,7 +193,8 @@ export async function checkActiveDuplicate(
   value: string,
   scopeFilter?: Record<string, any>,
   excludeId?: string,
-  extraFilter?: (query: any) => any
+  extraFilter?: (query: any) => any,
+  checkDeleted: boolean = table !== "organizations"
 ): Promise<boolean> {
   const trimmed = value.trim();
   if (!trimmed) return false;
@@ -201,8 +202,12 @@ export async function checkActiveDuplicate(
   let query: any = supabase
     .from(table)
     .select("id")
-    .ilike(column, trimmed.replace(/[\\%_]/g, "\\$&"))
-    .not("deleted", "is", true);
+    .ilike(column, trimmed.replace(/[\\%_]/g, "\\$&"));
+
+  // The 'organizations' table does not have a soft-delete column; skip 'deleted' check for it
+  if (checkDeleted && table !== "organizations") {
+    query = query.not("deleted", "is", true);
+  }
 
   if (excludeId) {
     query = query.neq("id", excludeId);

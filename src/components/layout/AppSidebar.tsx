@@ -216,13 +216,13 @@ export function AppSidebar() {
                         render={<Link to={item.url} />}
                         isActive={isActive}
                         tooltip={item.title}
-                        className={`h-8.5 gap-2.5 rounded-lg px-2.5 text-xs transition-colors ${
+                        className={`h-8.5 gap-2.5 rounded-lg px-2.5  transition-colors ${
                           isActive
                             ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                             : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                         }`}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
+                        <Icon className=" shrink-0" />
                         <span className="truncate">{item.title}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>

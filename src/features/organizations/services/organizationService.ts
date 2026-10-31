@@ -1,5 +1,4 @@
 import { supabase, supabaseAuthHelper } from "@/integrations/supabase/client";
-import { checkActiveDuplicate } from "@/shared/hooks/useCrud";
 import type { IOrganization } from "@/shared/types/organization";
 
 export interface STUProvisioningPayload {
@@ -26,14 +25,48 @@ export async function checkOrganizationNameDuplicate(
   name: string,
   excludeId?: string
 ): Promise<boolean> {
-  return checkActiveDuplicate("organizations", "name", name, undefined, excludeId);
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+
+  let query = supabase
+    .from("organizations")
+    .select("id")
+    .ilike("name", trimmed.replace(/[\\%_]/g, "\\$&"));
+
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+
+  const { data, error } = await query.limit(1);
+  if (error) {
+    console.warn("Duplicate check warning for organizations.name:", error);
+    return false;
+  }
+  return Boolean(data && data.length > 0);
 }
 
 export async function checkOrganizationEmailDuplicate(
   email: string,
   excludeId?: string
 ): Promise<boolean> {
-  return checkActiveDuplicate("organizations", "email", email, undefined, excludeId);
+  const trimmed = email.trim();
+  if (!trimmed) return false;
+
+  let query = supabase
+    .from("organizations")
+    .select("id")
+    .ilike("email", trimmed.replace(/[\\%_]/g, "\\$&"));
+
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+
+  const { data, error } = await query.limit(1);
+  if (error) {
+    console.warn("Duplicate check warning for organizations.email:", error);
+    return false;
+  }
+  return Boolean(data && data.length > 0);
 }
 
 /**

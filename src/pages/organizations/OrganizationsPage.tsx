@@ -70,11 +70,17 @@ export function OrganizationsPage() {
   const [deletingOrg, setDeletingOrg] = useState<IOrganization | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Status Toggle confirmation state
+  const [statusConfirmOrg, setStatusConfirmOrg] = useState<IOrganization | null>(null);
+  const [isTogglingStatus, setIsTogglingStatus] = useState(false);
+
   // Edit Form states
   const [editName, setEditName] = useState("");
   const [editNameError, setEditNameError] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [editEmailError, setEditEmailError] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editPhoneError, setEditPhoneError] = useState("");
   const [editActive, setEditActive] = useState(true);
   const [editPIS, setEditPIS] = useState(true);
   const [editPAS, setEditPAS] = useState(true);
@@ -108,6 +114,8 @@ export function OrganizationsPage() {
   const handleOpenEdit = (org: IOrganization) => {
     setEditingOrg(org);
     setEditNameError("");
+    setEditEmailError("");
+    setEditPhoneError("");
     setEditName(org.name || "");
     setEditEmail(org.email || "");
     setEditPhone(org.phone || "");
@@ -124,11 +132,36 @@ export function OrganizationsPage() {
     e.preventDefault();
     if (!editingOrg) return;
 
+    let hasError = false;
     const trimmedName = editName.trim();
     if (!trimmedName) {
       setEditNameError("Organization name is required.");
-      return;
+      hasError = true;
+    } else if (trimmedName.length < 2) {
+      setEditNameError("Organization name must be at least 2 characters.");
+      hasError = true;
     }
+
+    const trimmedEmail = editEmail.trim();
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!trimmedEmail) {
+      setEditEmailError("Corporate email address is required.");
+      hasError = true;
+    } else if (!emailRegex.test(trimmedEmail)) {
+      setEditEmailError("Please enter a valid corporate email address.");
+      hasError = true;
+    }
+
+    const trimmedPhone = editPhone.trim();
+    if (!trimmedPhone) {
+      setEditPhoneError("Contact number is required.");
+      hasError = true;
+    } else if (trimmedPhone.length < 7 || trimmedPhone.length > 16) {
+      setEditPhoneError("Contact number must be between 7 and 16 digits.");
+      hasError = true;
+    }
+
+    if (hasError) return;
 
     try {
       await updateOrganization({
@@ -136,15 +169,15 @@ export function OrganizationsPage() {
         payload: {
           id: editingOrg.id,
           name: trimmedName,
-          email: editEmail.trim() || null,
-          phone: editPhone.trim() || null,
+          email: trimmedEmail,
+          phone: trimmedPhone,
           customer_type: editingOrg.customer_type ?? "stu",
           active: editActive,
           PIS: editPIS,
           PAS: editPAS,
           ITMS: editITMS,
-          v1_routes: editV1,
-          v2_routes: editV2,
+          v1_routes: editPIS ? editV1 : false,
+          v2_routes: editPIS ? editV2 : false,
         },
       });
 
@@ -153,6 +186,42 @@ export function OrganizationsPage() {
       refetch();
     } catch (err: any) {
       notify.error(err.message || "Failed to update organization");
+    }
+  };
+
+  // Confirm Status Toggle (Activate / Suspend)
+  const handleToggleStatusConfirm = async () => {
+    if (!statusConfirmOrg) return;
+    try {
+      setIsTogglingStatus(true);
+      const targetState = !statusConfirmOrg.active;
+      await updateOrganization({
+        id: statusConfirmOrg.id,
+        payload: {
+          id: statusConfirmOrg.id,
+          name: statusConfirmOrg.name,
+          email: statusConfirmOrg.email ?? null,
+          phone: statusConfirmOrg.phone ?? null,
+          customer_type: statusConfirmOrg.customer_type ?? "stu",
+          active: targetState,
+          PIS: statusConfirmOrg.PIS ?? true,
+          PAS: statusConfirmOrg.PAS ?? true,
+          ITMS: statusConfirmOrg.ITMS ?? false,
+          v1_routes: statusConfirmOrg.v1_routes ?? false,
+          v2_routes: statusConfirmOrg.v2_routes ?? true,
+        },
+      });
+
+      notify.success(
+        `Organization ${targetState ? "Activated" : "Suspended"}`,
+        `"${statusConfirmOrg.name}" is now ${targetState ? "active and operational" : "suspended"}.`
+      );
+      setStatusConfirmOrg(null);
+      refetch();
+    } catch (err: any) {
+      notify.error(err.message || "Failed to change organization status");
+    } finally {
+      setIsTogglingStatus(false);
     }
   };
 
@@ -174,7 +243,7 @@ export function OrganizationsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
+    <div className="flex flex-col gap-6 w-full max-w-[1600px] mx-auto">
       {/* Page Header */}
       <div className="flex flex-col gap-1 border-b border-border pb-4">
         <div className="flex items-center gap-2.5">
@@ -203,7 +272,7 @@ export function OrganizationsPage() {
           />
         </div>
 
-        {/* Action Controls: STU Onboard Customer & Refresh */}
+        {/* Action Controls: Create Organization & Refresh */}
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -211,7 +280,7 @@ export function OrganizationsPage() {
             className="h-9 gap-1.5 text-xs font-semibold shadow-xs"
           >
             <Sparkles className="h-3.5 w-3.5" />
-            <span>STU Onboard Customer</span>
+            <span>Create Organization</span>
           </Button>
 
           <Button
@@ -229,20 +298,20 @@ export function OrganizationsPage() {
 
       {/* Loading Skeletons */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="space-y-4 p-5">
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-10 w-10 rounded-xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <Card key={i} className="space-y-4 p-4">
+              <div className="flex items-center gap-2.5">
+                <Skeleton className="h-9 w-9 rounded-xl" />
                 <div className="space-y-1.5 flex-1">
                   <Skeleton className="h-4 w-3/4" />
                   <Skeleton className="h-3 w-1/3" />
                 </div>
               </div>
-              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-10 w-full" />
               <div className="flex justify-between pt-2">
-                <Skeleton className="h-8 w-20 rounded-md" />
-                <Skeleton className="h-8 w-20 rounded-md" />
+                <Skeleton className="h-7 w-16 rounded-md" />
+                <Skeleton className="h-7 w-16 rounded-md" />
               </div>
             </Card>
           ))}
@@ -271,7 +340,7 @@ export function OrganizationsPage() {
           <p className="text-xs text-muted-foreground mt-1 max-w-sm">
             {searchTerm
               ? `No organizations match "${searchTerm}".`
-              : "No organizations have been registered in the database yet. Click 'STU Onboard Customer' to create one."}
+              : "No organizations have been registered in the database yet. Click 'Create Organization' to create one."}
           </p>
           {searchTerm && (
             <Button
@@ -285,8 +354,8 @@ export function OrganizationsPage() {
           )}
         </div>
       ) : (
-        /* Organizations Cards Grid */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        /* Organizations Cards Grid (5-column layout on XL screens) */
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3.5">
           {filteredOrgs.map((org) => {
             const isNavitronix = org.name.toLowerCase() === "navitronix";
             const initials = org.name.slice(0, 2).toUpperCase();
@@ -299,11 +368,11 @@ export function OrganizationsPage() {
               >
                 <div>
                   {/* Card Header */}
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-3">
-                      {/* Organization Avatar + Name */}
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10 rounded-xl after:rounded-xl shrink-0">
+                  <CardHeader className=" pb-2.5 block w-full min-w-0">
+                    <div className="flex items-start justify-between gap-2 w-full min-w-0">
+                      {/* Organization Avatar + Name (up to 2 lines max with break-words to prevent overflow) */}
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <Avatar className="h-9 w-9 rounded-xl after:rounded-xl shrink-0 mt-0.5">
                           {org.logo && (
                             <AvatarImage
                               src={org.logo}
@@ -324,96 +393,106 @@ export function OrganizationsPage() {
                           </AvatarFallback>
                         </Avatar>
 
-                        <div className="flex flex-col truncate">
-                          <CardTitle className="text-sm font-semibold truncate text-foreground">
-                            {org.name}
-                          </CardTitle>
-                         
-                        </div>
+                       
                       </div>
 
-                      {/* Active Status Badge */}
-                      <Badge
-                        variant={org.active ? "default" : "secondary"}
-                        className={`text-[10px] px-2 py-0.5 capitalize shrink-0 ${
+                      {/* Active Status Interactive Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => setStatusConfirmOrg(org)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all shrink-0 cursor-pointer select-none mt-0.5",
                           org.active
-                            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                            : "bg-muted text-muted-foreground"
-                        }`}
+                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20"
+                            : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                        )}
+                        title={`Click to ${org.active ? "suspend" : "activate"} ${org.name}`}
                       >
-                        {org.active ? "Active" : "Suspended"}
-                      </Badge>
+                        <span
+                          className={cn(
+                            "size-1.5 rounded-full shrink-0",
+                            org.active ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/60"
+                          )}
+                        />
+                        <span>{org.active ? "Active" : "Suspended"}</span>
+                      </button>
                     </div>
                   </CardHeader>
 
                   {/* Card Content */}
-                  <CardContent className="space-y-3 pb-3">
+                  <CardContent className="p-3.5 pt-0 space-y-2.5">
                     {/* Contact Details */}
+                     <div className="min-w-0 flex-1">
+                          <CardTitle
+                            className="text-sm font-semibold leading-snug text-foreground line-clamp-2 break-words [overflow-wrap:anywhere]"
+                            title={org.name}
+                          >
+                            {org.name}
+                          </CardTitle>
+                        </div>
                     <div className="space-y-1 text-xs text-muted-foreground">
+
                       {org.email && (
-                        <div className="flex items-center gap-2 truncate">
+                        <div className="flex items-center gap-2 truncate" title={org.email}>
                           <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                           <span className="truncate">{org.email}</span>
                         </div>
                       )}
                       {org.phone && (
-                        <div className="flex items-center gap-2 truncate">
+                        <div className="flex items-center gap-2 truncate" title={org.phone}>
                           <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                           <span className="truncate">{org.phone}</span>
                         </div>
                       )}
+                      
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                         <span>Created {formatDate(org.created_at)}</span>
                       </div>
                     </div>
 
-                    {/* Features Tags */}
+                    {/* Features Tags: Show ONLY enabled module chips */}
                     <div className="pt-2 border-t border-border/60">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
                         Enabled Modules
                       </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <Badge
-                          variant={org.PIS ? "default" : "outline"}
-                          className={`text-[10px] px-1.5 py-0 h-4.5 ${
-                            org.PIS
-                              ? "bg-blue-600 text-white hover:bg-blue-600"
-                              : "opacity-40"
-                          }`}
-                        >
-                          <Radio className="h-2.5 w-2.5 mr-1" />
-                          PIS
-                        </Badge>
-                        <Badge
-                          variant={org.PAS ? "default" : "outline"}
-                          className={`text-[10px] px-1.5 py-0 h-4.5 ${
-                            org.PAS
-                              ? "bg-indigo-600 text-white hover:bg-indigo-600"
-                              : "opacity-40"
-                          }`}
-                        >
-                          PAS
-                        </Badge>
-                        <Badge
-                          variant={org.ITMS ? "default" : "outline"}
-                          className={`text-[10px] px-1.5 py-0 h-4.5 ${
-                            org.ITMS
-                              ? "bg-cyan-600 text-white hover:bg-cyan-600"
-                              : "opacity-40"
-                          }`}
-                        >
-                          ITMS
-                        </Badge>
-                        {org.v1_routes && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5">
-                            V1
+                      <div className="flex flex-wrap gap-1">
+                        {org.PIS && (
+                          <Badge className="text-[10px] px-1.5 py-0 h-4.5 bg-blue-600 hover:bg-blue-600 text-white gap-1 font-medium shadow-none">
+                            <Radio className="h-2.5 w-2.5" />
+                            PIS
+                          </Badge>
+                        )}
+                        {org.PAS && (
+                          <Badge className="text-[10px] px-1.5 py-0 h-4.5 bg-indigo-600 hover:bg-indigo-600 text-white gap-1 font-medium shadow-none">
+                            <Volume2 className="h-2.5 w-2.5" />
+                            PAS
+                          </Badge>
+                        )}
+                        {org.ITMS && (
+                          <Badge className="text-[10px] px-1.5 py-0 h-4.5 bg-cyan-600 hover:bg-cyan-600 text-white gap-1 font-medium shadow-none">
+                            <Cpu className="h-2.5 w-2.5" />
+                            ITMS
                           </Badge>
                         )}
                         {org.v2_routes && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4.5">
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 h-4.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 font-medium"
+                          >
                             V2
                           </Badge>
+                        )}
+                        {org.v1_routes && (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1.5 py-0 h-4.5 border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-500/5 font-medium"
+                          >
+                            V1
+                          </Badge>
+                        )}
+                        {!org.PIS && !org.PAS && !org.ITMS && !org.v1_routes && !org.v2_routes && (
+                          <span className="text-[10px] text-muted-foreground italic">None configured</span>
                         )}
                       </div>
                     </div>
@@ -421,14 +500,14 @@ export function OrganizationsPage() {
                 </div>
 
                 {/* Card Footer: CRUD Operations (Edit & Delete) */}
-                <CardFooter className="pt-3 pb-3 border-t border-border/80 flex items-center justify-end gap-2 bg-muted/20">
+                <CardFooter className="px-3.5 py-2.5 border-t border-border/80 flex items-center justify-end gap-1.5 bg-muted/20">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleOpenEdit(org)}
-                    className="h-8 text-xs gap-1.5 hover:bg-muted font-medium"
+                    className="h-7 text-xs px-2.5 gap-1 hover:bg-muted font-medium"
                   >
-                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Pencil className="h-3 w-3 text-muted-foreground" />
                     <span>Edit</span>
                   </Button>
 
@@ -436,9 +515,9 @@ export function OrganizationsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => setDeletingOrg(org)}
-                    className="h-8 text-xs gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive border-input"
+                    className="h-7 text-xs px-2.5 gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive border-input"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3 w-3" />
                     <span>Delete</span>
                   </Button>
                 </CardFooter>
@@ -504,49 +583,84 @@ export function OrganizationsPage() {
 
                 <div className="space-y-1">
                   <Label htmlFor="edit-org-email" className="text-xs font-semibold">
-                    Corporate Email
+                    Corporate Email *
                   </Label>
                   <Input
                     id="edit-org-email"
                     type="email"
                     value={editEmail}
-                    onChange={(e) => setEditEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEditEmail(e.target.value);
+                      if (editEmailError) setEditEmailError("");
+                    }}
                     placeholder="contact@agency.gov.in"
-                    className="h-9 text-xs"
+                    className={cn(
+                      "h-9 text-xs",
+                      editEmailError && "border-destructive focus-visible:ring-destructive/20"
+                    )}
                   />
+                  {editEmailError && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{editEmailError}</span>
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
                   <Label htmlFor="edit-org-phone" className="text-xs font-semibold">
-                    Corporate Phone
+                    Contact Number *
                   </Label>
                   <Input
                     id="edit-org-phone"
                     value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
+                    onChange={(e) => {
+                      setEditPhone(e.target.value);
+                      if (editPhoneError) setEditPhoneError("");
+                    }}
                     placeholder="+91 80 2222 1111"
-                    className="h-9 text-xs"
+                    className={cn(
+                      "h-9 text-xs",
+                      editPhoneError && "border-destructive focus-visible:ring-destructive/20"
+                    )}
                   />
+                  {editPhoneError && (
+                    <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
+                      <AlertCircle className="h-3 w-3 shrink-0" />
+                      <span>{editPhoneError}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Checkbox Cards Grid of Columns */}
-              <div className="space-y-2 pt-1">
+              <div className="space-y-3 pt-1">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
                   Transit Modules & Operational Settings
                 </span>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {/* Primary Modules Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
                   {/* Card 1: PIS */}
                   <div
                     role="checkbox"
                     aria-checked={editPIS}
                     tabIndex={0}
-                    onClick={() => setEditPIS(!editPIS)}
+                    onClick={() => {
+                      const next = !editPIS;
+                      setEditPIS(next);
+                      if (next && !editV1 && !editV2) {
+                        setEditV2(true);
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
                         e.preventDefault();
-                        setEditPIS(!editPIS);
+                        const next = !editPIS;
+                        setEditPIS(next);
+                        if (next && !editV1 && !editV2) {
+                          setEditV2(true);
+                        }
                       }
                     }}
                     className={cn(
@@ -642,77 +756,7 @@ export function OrganizationsPage() {
                     </p>
                   </div>
 
-                  {/* Card 4: V2 Route Engine */}
-                  <div
-                    role="checkbox"
-                    aria-checked={editV2}
-                    tabIndex={0}
-                    onClick={() => setEditV2(!editV2)}
-                    onKeyDown={(e) => {
-                      if (e.key === " " || e.key === "Enter") {
-                        e.preventDefault();
-                        setEditV2(!editV2);
-                      }
-                    }}
-                    className={cn(
-                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
-                      editV2
-                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
-                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
-                        <Sliders className="h-4 w-4 text-emerald-600 shrink-0" />
-                        <span>V2 Route Engine</span>
-                      </div>
-                      <Checkbox
-                        checked={editV2}
-                        tabIndex={-1}
-                        className="pointer-events-none mt-0.5"
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
-                      Multi-slide layouts & Unicode Kannada fonts
-                    </p>
-                  </div>
-
-                  {/* Card 5: V1 Route Legacy */}
-                  <div
-                    role="checkbox"
-                    aria-checked={editV1}
-                    tabIndex={0}
-                    onClick={() => setEditV1(!editV1)}
-                    onKeyDown={(e) => {
-                      if (e.key === " " || e.key === "Enter") {
-                        e.preventDefault();
-                        setEditV1(!editV1);
-                      }
-                    }}
-                    className={cn(
-                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
-                      editV1
-                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
-                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
-                        <Layers className="h-4 w-4 text-amber-600 shrink-0" />
-                        <span>V1 Route Legacy</span>
-                      </div>
-                      <Checkbox
-                        checked={editV1}
-                        tabIndex={-1}
-                        className="pointer-events-none mt-0.5"
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
-                      Backward support for older controller devices
-                    </p>
-                  </div>
-
-                  {/* Card 6: Account Operational Status */}
+                  {/* Card 4: Account Operational Status */}
                   <div
                     role="checkbox"
                     aria-checked={editActive}
@@ -752,6 +796,86 @@ export function OrganizationsPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* PIS Features: V1 & V2 Route Access (shown only if PIS is checked) */}
+                {editPIS && (
+                  <div className="space-y-2 pt-2 border-t border-border/70 animate-in fade-in-50 duration-200">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                      PIS Route Formats & Display Engines
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* V2 Route Engine */}
+                      <div
+                        role="checkbox"
+                        aria-checked={editV2}
+                        tabIndex={0}
+                        onClick={() => setEditV2(!editV2)}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            setEditV2(!editV2);
+                          }
+                        }}
+                        className={cn(
+                          "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                          editV2
+                            ? "border-emerald-500/70 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
+                            : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                            <Sliders className="h-4 w-4 text-emerald-600 shrink-0" />
+                            <span>V2 Route Engine (Modern)</span>
+                          </div>
+                          <Checkbox
+                            checked={editV2}
+                            tabIndex={-1}
+                            className="pointer-events-none mt-0.5"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                          Multi-slide layouts & Unicode Kannada fonts
+                        </p>
+                      </div>
+
+                      {/* V1 Route Legacy */}
+                      <div
+                        role="checkbox"
+                        aria-checked={editV1}
+                        tabIndex={0}
+                        onClick={() => setEditV1(!editV1)}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            setEditV1(!editV1);
+                          }
+                        }}
+                        className={cn(
+                          "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                          editV1
+                            ? "border-amber-500/70 bg-amber-500/5 text-foreground ring-1 ring-amber-500/20 shadow-2xs"
+                            : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                            <Layers className="h-4 w-4 text-amber-600 shrink-0" />
+                            <span>V1 Route Legacy</span>
+                          </div>
+                          <Checkbox
+                            checked={editV1}
+                            tabIndex={-1}
+                            className="pointer-events-none mt-0.5"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                          Legacy single-line LED microcontrollers
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Dialog Footer */}
@@ -790,6 +914,80 @@ export function OrganizationsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Status Change Confirmation Dialog */}
+      <Dialog open={!!statusConfirmOrg} onOpenChange={(open) => !open && setStatusConfirmOrg(null)}>
+        <DialogContent className="sm:max-w-md p-6">
+          <DialogHeader>
+            <div
+              className={cn(
+                "h-10 w-10 rounded-full flex items-center justify-center mb-2",
+                statusConfirmOrg?.active
+                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              )}
+            >
+              {statusConfirmOrg?.active ? (
+                <AlertTriangle className="h-5 w-5" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5" />
+              )}
+            </div>
+            <DialogTitle className="text-base font-bold">
+              {statusConfirmOrg?.active ? "Suspend Organization" : "Activate Organization"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground space-y-2 pt-1">
+              <span>
+                Are you sure you want to{" "}
+                <strong className="text-foreground">
+                  {statusConfirmOrg?.active ? "suspend" : "activate"}
+                </strong>{" "}
+                this organization?
+              </span>
+              <span className="block font-medium">
+                {statusConfirmOrg?.active
+                  ? "Suspending this organization will temporarily restrict depot access, fleet telemetry, and vehicle configurations."
+                  : "Activating this organization will re-enable all configured transit modules and operational access for assigned users."}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setStatusConfirmOrg(null)}
+              disabled={isTogglingStatus}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant={statusConfirmOrg?.active ? "destructive" : "default"}
+              size="sm"
+              onClick={handleToggleStatusConfirm}
+              disabled={isTogglingStatus}
+              className={cn(
+                "text-xs font-semibold gap-1.5",
+                !statusConfirmOrg?.active && "bg-emerald-600 hover:bg-emerald-700 text-white"
+              )}
+            >
+              {isTogglingStatus ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Updating...
+                </>
+              ) : statusConfirmOrg?.active ? (
+                "Deactivate"
+              ) : (
+                "Activate"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deletingOrg} onOpenChange={(open) => !open && setDeletingOrg(null)}>
         <DialogContent className="sm:max-w-md p-6">
@@ -802,8 +1000,7 @@ export function OrganizationsPage() {
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground space-y-2 pt-1">
               <span>
-                Are you sure you want to permanently delete{" "}
-                <strong className="text-foreground">{deletingOrg?.name}</strong>?
+                Are you sure you want to permanently delete this organization?
               </span>
               <span className="block text-destructive/90 font-medium">
                 This action cannot be undone. Child depots, regions, and staff associations under this organization will be detached or deleted.

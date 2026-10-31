@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { cn } from "cn";
-import { provisionSTUOrganization } from "@/features/organizations";
+import {
+  provisionSTUOrganization,
+  checkOrganizationNameDuplicate,
+  checkOrganizationEmailDuplicate,
+} from "@/features/organizations";
 import { notify } from "@/core/notifications/notificationService";
 import {
   Dialog,
@@ -84,6 +88,7 @@ export function STUOnboardingWizardDialog({
 }: STUOnboardingWizardDialogProps) {
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isValidatingStep, setIsValidatingStep] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPassword, setShowPassword] = useState(false);
 
@@ -258,7 +263,7 @@ export function STUOnboardingWizardDialog({
   // ----------------------------------------------------
   // Step Transitions & Validations
   // ----------------------------------------------------
-  const handleNext = () => {
+  const handleNext = async () => {
     // Step 1 Validation
     if (currentStep === 1) {
       const step1Errors: Record<string, string> = {};
@@ -297,6 +302,26 @@ export function STUOnboardingWizardDialog({
         return;
       }
 
+      // Check duplicates in database immediately before leaving Step 1
+      try {
+        setIsValidatingStep(true);
+        const nameDuplicate = await checkOrganizationNameDuplicate(trimmedName);
+        if (nameDuplicate) {
+          setErrors({ name: `An organization with the name "${trimmedName}" already exists.` });
+          return;
+        }
+
+        const emailDuplicate = await checkOrganizationEmailDuplicate(trimmedEmail);
+        if (emailDuplicate) {
+          setErrors({ email: `An organization with the email "${trimmedEmail}" already exists.` });
+          return;
+        }
+      } catch (err: any) {
+        console.warn("Duplicate pre-check warning:", err);
+      } finally {
+        setIsValidatingStep(false);
+      }
+
       setErrors({});
       // Auto-suggest admin email if not filled
       if (!adminEmail) {
@@ -311,8 +336,8 @@ export function STUOnboardingWizardDialog({
       if (!enablePIS && !enablePAS && !enableITMS) {
         step2Errors.modules = "At least one intelligent transit module (PIS, PAS, or ITMS) must be enabled.";
       }
-      if (!enableV1Routes && !enableV2Routes) {
-        step2Errors.routes = "At least one route format engine (V2 or V1) must be enabled.";
+      if (enablePIS && !enableV1Routes && !enableV2Routes) {
+        step2Errors.routes = "At least one route format engine (V2 or V1) must be enabled when PIS is enabled.";
       }
       if (Object.keys(step2Errors).length > 0) {
         setErrors(step2Errors);
@@ -390,8 +415,8 @@ export function STUOnboardingWizardDialog({
           PIS: enablePIS,
           PAS: enablePAS,
           ITMS: enableITMS,
-          v1_routes: enableV1Routes,
-          v2_routes: enableV2Routes,
+          v1_routes: enablePIS ? enableV1Routes : false,
+          v2_routes: enablePIS ? enableV2Routes : false,
         },
         regions: regions.map((r) => r.name),
         depots: depots.map((d) => ({ name: d.name, regionName: d.regionName })),
@@ -402,25 +427,25 @@ export function STUOnboardingWizardDialog({
       });
 
       notify.success(
-        "STU Customer Onboarded Successfully",
+        "Organization Created Successfully",
         `Created "${name.trim()}" with ${regions.length} regions, ${depots.length} depots, and admin credentials.`
       );
       resetForm();
       onOpenChange(false);
       onSuccess?.();
     } catch (err: any) {
-      setErrors({ submit: err.message || "Failed to onboard STU organization." });
+      setErrors({ submit: err.message || "Failed to create organization." });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const steps = [
-    { num: 1, title: "Customer Details", icon: Building2 },
+    { num: 1, title: "Organization Details", icon: Building2 },
     { num: 2, title: "Capabilities", icon: Sliders },
     { num: 3, title: "Regions", icon: Compass },
     { num: 4, title: "Bus Depots", icon: Warehouse },
-    { num: 5, title: "Admin & Provision", icon: KeyRound },
+    { num: 5, title: "Admin & Create", icon: KeyRound },
   ];
 
   return (
@@ -434,10 +459,10 @@ export function STUOnboardingWizardDialog({
             </div>
             <div>
               <DialogTitle className="text-lg font-bold">
-                Onboard Transport Undertaking
+                Create Organization
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                Set up enterprise transit agency, administrative regions, bus depots, and master credentials.
+                Set up transit organization, administrative regions, bus depots, and master credentials.
               </DialogDescription>
             </div>
           </div>
@@ -565,28 +590,43 @@ export function STUOnboardingWizardDialog({
         {/* Step 2: Transit Capabilities & Modules */}
         {/* ========================================================================= */}
         {currentStep === 2 && (
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
+            {/* Section 1: Intelligent Transit Modules Header */}
             <div>
               <span className="text-xs font-semibold text-foreground block">
-                Intelligent Transit Systems & Engines
+                Intelligent Transit Modules
               </span>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Enable onboard hardware controllers, telematics, and announcement technologies.
+                Enable onboard hardware systems, telematics, and announcement technologies.
               </p>
             </div>
 
-            {/* Checkbox Cards Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-1">
+            {/* Primary Intelligent Transit Modules */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 pt-0.5">
               {/* Card 1: PIS */}
               <div
                 role="checkbox"
                 aria-checked={enablePIS}
                 tabIndex={0}
-                onClick={() => setEnablePIS(!enablePIS)}
+                onClick={() => {
+                  const nextPIS = !enablePIS;
+                  setEnablePIS(nextPIS);
+                  if (nextPIS && !enableV1Routes && !enableV2Routes) {
+                    setEnableV2Routes(true);
+                  }
+                  clearError("modules");
+                  clearError("routes");
+                }}
                 onKeyDown={(e) => {
                   if (e.key === " " || e.key === "Enter") {
                     e.preventDefault();
-                    setEnablePIS(!enablePIS);
+                    const nextPIS = !enablePIS;
+                    setEnablePIS(nextPIS);
+                    if (nextPIS && !enableV1Routes && !enableV2Routes) {
+                      setEnableV2Routes(true);
+                    }
+                    clearError("modules");
+                    clearError("routes");
                   }
                 }}
                 className={cn(
@@ -604,7 +644,7 @@ export function STUOnboardingWizardDialog({
                   <Checkbox
                     checked={enablePIS}
                     tabIndex={-1}
-                    className="pointer-events-none mt-0.5"
+                    className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
                   />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
@@ -617,11 +657,15 @@ export function STUOnboardingWizardDialog({
                 role="checkbox"
                 aria-checked={enablePAS}
                 tabIndex={0}
-                onClick={() => setEnablePAS(!enablePAS)}
+                onClick={() => {
+                  setEnablePAS(!enablePAS);
+                  clearError("modules");
+                }}
                 onKeyDown={(e) => {
                   if (e.key === " " || e.key === "Enter") {
                     e.preventDefault();
                     setEnablePAS(!enablePAS);
+                    clearError("modules");
                   }
                 }}
                 className={cn(
@@ -639,7 +683,7 @@ export function STUOnboardingWizardDialog({
                   <Checkbox
                     checked={enablePAS}
                     tabIndex={-1}
-                    className="pointer-events-none mt-0.5"
+                    className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
                   />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
@@ -652,11 +696,15 @@ export function STUOnboardingWizardDialog({
                 role="checkbox"
                 aria-checked={enableITMS}
                 tabIndex={0}
-                onClick={() => setEnableITMS(!enableITMS)}
+                onClick={() => {
+                  setEnableITMS(!enableITMS);
+                  clearError("modules");
+                }}
                 onKeyDown={(e) => {
                   if (e.key === " " || e.key === "Enter") {
                     e.preventDefault();
                     setEnableITMS(!enableITMS);
+                    clearError("modules");
                   }
                 }}
                 className={cn(
@@ -674,84 +722,113 @@ export function STUOnboardingWizardDialog({
                   <Checkbox
                     checked={enableITMS}
                     tabIndex={-1}
-                    className="pointer-events-none mt-0.5"
+                    className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
                   />
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
                   Real-time GPS telemetry & schedule compliance tracking
                 </p>
               </div>
-
-              {/* Card 4: V2 Route Engine */}
-              <div
-                role="checkbox"
-                aria-checked={enableV2Routes}
-                tabIndex={0}
-                onClick={() => setEnableV2Routes(!enableV2Routes)}
-                onKeyDown={(e) => {
-                  if (e.key === " " || e.key === "Enter") {
-                    e.preventDefault();
-                    setEnableV2Routes(!enableV2Routes);
-                  }
-                }}
-                className={cn(
-                  "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
-                  enableV2Routes
-                    ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
-                    : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
-                    <Sliders className="h-4 w-4 text-emerald-600 shrink-0" />
-                    <span>V2 Route Engine</span>
-                  </div>
-                  <Checkbox
-                    checked={enableV2Routes}
-                    tabIndex={-1}
-                    className="pointer-events-none mt-0.5"
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
-                  Multi-slide bilingual layouts & split-screen Unicode Kannada
-                </p>
-              </div>
-
-              {/* Card 5: V1 Route Legacy */}
-              <div
-                role="checkbox"
-                aria-checked={enableV1Routes}
-                tabIndex={0}
-                onClick={() => setEnableV1Routes(!enableV1Routes)}
-                onKeyDown={(e) => {
-                  if (e.key === " " || e.key === "Enter") {
-                    e.preventDefault();
-                    setEnableV1Routes(!enableV1Routes);
-                  }
-                }}
-                className={cn(
-                  "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
-                  enableV1Routes
-                    ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
-                    : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
-                    <Layers className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span>V1 Route Legacy</span>
-                  </div>
-                  <Checkbox
-                    checked={enableV1Routes}
-                    tabIndex={-1}
-                    className="pointer-events-none mt-0.5"
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
-                  Backwards compatibility for legacy onboard LED microcontrollers
-                </p>
-              </div>
             </div>
+
+            {/* Section 2: PIS Features Header & Route Access (shown only if PIS is checked) */}
+            {enablePIS && (
+              <div className="space-y-3 pt-3 border-t border-border/80 animate-in fade-in-50 duration-200">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-foreground block">
+                      PIS Route Display Engines
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      PIS Sub-Features
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Select supported route format engines for LED destination boards and in-bus screens.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                  {/* Card: V2 Route Engine */}
+                  <div
+                    role="checkbox"
+                    aria-checked={enableV2Routes}
+                    tabIndex={0}
+                    onClick={() => {
+                      setEnableV2Routes(!enableV2Routes);
+                      clearError("routes");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setEnableV2Routes(!enableV2Routes);
+                        clearError("routes");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      enableV2Routes
+                        ? "border-emerald-500/70 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Sliders className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <span>V2 Route Engine (Modern)</span>
+                      </div>
+                      <Checkbox
+                        checked={enableV2Routes}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Multi-slide bilingual layouts & split-screen Unicode Kannada
+                    </p>
+                  </div>
+
+                  {/* Card: V1 Route Legacy */}
+                  <div
+                    role="checkbox"
+                    aria-checked={enableV1Routes}
+                    tabIndex={0}
+                    onClick={() => {
+                      setEnableV1Routes(!enableV1Routes);
+                      clearError("routes");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setEnableV1Routes(!enableV1Routes);
+                        clearError("routes");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      enableV1Routes
+                        ? "border-amber-500/70 bg-amber-500/5 text-foreground ring-1 ring-amber-500/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Layers className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span>V1 Route Legacy</span>
+                      </div>
+                      <Checkbox
+                        checked={enableV1Routes}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Backwards compatibility for legacy onboard LED microcontrollers
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <FieldErrorText message={errors.modules || errors.routes} />
           </div>
@@ -819,7 +896,7 @@ export function STUOnboardingWizardDialog({
                 <span className="font-semibold text-foreground">
                   Configured Regions ({regions.length})
                 </span>
-                <span className="text-[11px]">Horizontal full-width cards</span>
+               
               </div>
 
               {regions.length === 0 ? (
@@ -899,32 +976,7 @@ export function STUOnboardingWizardDialog({
             {/* Quick-Add Card */}
             <Card className="p-3 border bg-muted/20 shadow-none">
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
-                <div className="sm:col-span-7 space-y-1">
-                  <Label htmlFor="depot-name-input" className="text-xs font-semibold">
-                    Depot Name *
-                  </Label>
-                  <Input
-                    id="depot-name-input"
-                    type="text"
-                    value={newDepotName}
-                    onChange={(e) => {
-                      setNewDepotName(e.target.value);
-                      clearError("newDepotName");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddDepot();
-                      }
-                    }}
-                    placeholder="e.g. Depot 28 - Hebbal"
-                    aria-invalid={Boolean(errors.newDepotName)}
-                    autoFocus
-                  />
-                  <FieldErrorText message={errors.newDepotName} />
-                </div>
-
-                <div className="sm:col-span-5 space-y-1">
+                 <div className="sm:col-span-5 space-y-1">
                   <Label htmlFor="depot-region-select" className="text-xs font-semibold">
                     Parent Region *
                   </Label>
@@ -965,6 +1017,32 @@ export function STUOnboardingWizardDialog({
                   </div>
                   <FieldErrorText message={errors.newDepotRegion} />
                 </div>
+                <div className="sm:col-span-7 space-y-1">
+                  <Label htmlFor="depot-name-input" className="text-xs font-semibold">
+                    Depot Name *
+                  </Label>
+                  <Input
+                    id="depot-name-input"
+                    type="text"
+                    value={newDepotName}
+                    onChange={(e) => {
+                      setNewDepotName(e.target.value);
+                      clearError("newDepotName");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddDepot();
+                      }
+                    }}
+                    placeholder="e.g. Depot 28 - Hebbal"
+                    aria-invalid={Boolean(errors.newDepotName)}
+                    autoFocus
+                  />
+                  <FieldErrorText message={errors.newDepotName} />
+                </div>
+
+               
               </div>
             </Card>
 
@@ -1161,12 +1239,12 @@ export function STUOnboardingWizardDialog({
                         ITMS
                       </Badge>
                     )}
-                    {enableV2Routes && (
+                    {enablePIS && enableV2Routes && (
                       <Badge variant="outline" className="text-[10px] py-0 px-1 bg-emerald-500/10 text-emerald-600 border-emerald-200">
                         V2
                       </Badge>
                     )}
-                    {enableV1Routes && (
+                    {enablePIS && enableV1Routes && (
                       <Badge variant="outline" className="text-[10px] py-0 px-1 bg-amber-500/10 text-amber-600 border-amber-200">
                         V1
                       </Badge>
@@ -1215,10 +1293,20 @@ export function STUOnboardingWizardDialog({
                 type="button"
                 size="sm"
                 onClick={handleNext}
+                disabled={isValidatingStep}
                 className="text-xs font-semibold gap-1"
               >
-                <span>Continue</span>
-                <ChevronRight className="h-3.5 w-3.5" />
+                {isValidatingStep ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Continue</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </>
+                )}
               </Button>
             ) : (
               <Button

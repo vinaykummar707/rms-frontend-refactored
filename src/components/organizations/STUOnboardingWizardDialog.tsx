@@ -323,11 +323,6 @@ export function STUOnboardingWizardDialog({
       }
 
       setErrors({});
-      // Auto-suggest admin email if not filled
-      if (!adminEmail) {
-        const domain = trimmedEmail.split("@")[1] || "navitronix.com";
-        setAdminEmail(`admin@${domain}`);
-      }
     }
 
     // Step 2 Validation
@@ -975,7 +970,7 @@ export function STUOnboardingWizardDialog({
 
             {/* Quick-Add Card */}
             <Card className="p-3 border bg-muted/20 shadow-none">
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                  <div className="sm:col-span-5 space-y-1">
                   <Label htmlFor="depot-region-select" className="text-xs font-semibold">
                     Parent Region *
@@ -1005,19 +1000,11 @@ export function STUOnboardingWizardDialog({
                         </SelectContent>
                       </Select>
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleAddDepot}
-                      className="h-8 text-xs font-semibold gap-1 px-3 shrink-0"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>Add</span>
-                    </Button>
+                   
                   </div>
                   <FieldErrorText message={errors.newDepotRegion} />
                 </div>
-                <div className="sm:col-span-7 space-y-1">
+                <div className="sm:col-span-5 space-y-1">
                   <Label htmlFor="depot-name-input" className="text-xs font-semibold">
                     Depot Name *
                   </Label>
@@ -1039,9 +1026,19 @@ export function STUOnboardingWizardDialog({
                     aria-invalid={Boolean(errors.newDepotName)}
                     autoFocus
                   />
+                  
                   <FieldErrorText message={errors.newDepotName} />
+                  
                 </div>
-
+                      <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleAddDepot}
+                      className="h-8 col-span-2 text-xs font-semibold gap-1 px-3 shrink-0"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add Depot</span>
+                    </Button>
                
               </div>
             </Card>
@@ -1145,6 +1142,7 @@ export function STUOnboardingWizardDialog({
                       clearError("adminEmail");
                     }}
                     placeholder="admin@agency.gov.in"
+                    autoComplete="off"
                     aria-invalid={Boolean(errors.adminEmail)}
                     autoFocus
                   />
@@ -1164,7 +1162,8 @@ export function STUOnboardingWizardDialog({
                         setAdminPassword(e.target.value);
                         clearError("adminPassword");
                       }}
-                      placeholder="Minimum 8 characters"
+                      placeholder="Enter your password"
+                      autoComplete="new-password"
                       className="pr-8"
                       aria-invalid={Boolean(errors.adminPassword)}
                     />

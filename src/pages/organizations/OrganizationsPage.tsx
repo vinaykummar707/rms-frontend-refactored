@@ -453,9 +453,7 @@ export function OrganizationsPage() {
 
                     {/* Features Tags: Show ONLY enabled module chips */}
                     <div className="pt-2 border-t border-border/60">
-                      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-                        Enabled Modules
-                      </span>
+                     
                       <div className="flex flex-wrap gap-1">
                         {org.PIS && (
                           <Badge className="text-[10px] px-1.5 py-0 h-4.5 bg-blue-600 hover:bg-blue-600 text-white gap-1 font-medium shadow-none">

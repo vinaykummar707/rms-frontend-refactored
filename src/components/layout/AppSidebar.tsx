@@ -109,7 +109,7 @@ export function AppSidebar() {
       url: "/home/route-configuration",
       icon: GitBranch,
       roles: [ROLES.DEPOT_ADMIN, ROLES.REGION_ADMIN, ROLES.ORGANIZATION_ADMIN, ROLES.GUEST],
-      features: ["PIS", "PAS", "ITMS"],
+      features: ["PAS", "ITMS"],
     },
   ];
 
@@ -148,13 +148,15 @@ export function AppSidebar() {
     return item.features.some((f) => hasUserFeature(user, f));
   };
 
-  // Section list matching navitronics-ui categorizations
+  // Section list matching navitronics-ui categorizations & tenant feature modules
   const rawSections: NavSection[] = isRegular
     ? [{ title: "Menu", items: regularCustomerNav }]
     : [
         { title: null, items: organizationNav },
-        { title: "PIS", items: pisNav },
-        { title: "PAS", items: pasNav },
+        ...(isSuper || hasUserFeature(user, "PIS") ? [{ title: "PIS", items: pisNav }] : []),
+        ...(isSuper || hasUserFeature(user, "PAS") || hasUserFeature(user, "ITMS")
+          ? [{ title: "PAS", items: pasNav }]
+          : []),
         ...(isSuper
           ? [
               { title: "REGULAR CUSTOMERS", items: regularCustomerNav },

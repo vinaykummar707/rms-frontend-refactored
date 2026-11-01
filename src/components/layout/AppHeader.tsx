@@ -124,9 +124,11 @@ export function AppHeader() {
                     <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">
                       {getRoleLabel(user?.role?.name)}
                     </Badge>
-                    <span className="text-[10px] text-muted-foreground uppercase">
-                      {user?.customer_type === "regular" ? "Regular" : "STU"}
-                    </span>
+                    {user?.customer_type === "regular" && (
+                      <span className="text-[10px] text-muted-foreground uppercase">
+                        Regular
+                      </span>
+                    )}
                   </div>
                 </div>
               </DropdownMenuLabel>

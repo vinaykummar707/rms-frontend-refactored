@@ -61,9 +61,11 @@ export function GlobalOrgSelector() {
         <span className="font-semibold text-foreground max-w-[140px] truncate">
           {user.organization.name}
         </span>
-        <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
-          {user.customer_type === "regular" ? "Regular" : "STU"}
-        </Badge>
+        {user.customer_type === "regular" && (
+          <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
+            Regular
+          </Badge>
+        )}
       </div>
     );
   }

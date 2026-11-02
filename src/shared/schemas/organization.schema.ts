@@ -43,6 +43,10 @@ export const organizationSchema = z
   .refine((data) => data.PIS || data.PAS || data.ITMS, {
     message: "At least one module must be selected for the organization",
     path: ["PIS"],
+  })
+  .refine((data) => !data.PIS || data.v1_routes || data.v2_routes, {
+    message: "At least one route format engine (V1 or V2) must be selected when PIS is enabled",
+    path: ["v2_routes"],
   });
 
 export type OrganizationFormValues = z.infer<typeof organizationSchema>;

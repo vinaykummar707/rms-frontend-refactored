@@ -1,6 +1,12 @@
 import React, { useState, useMemo } from "react";
 import { cn } from "cn";
-import { useOrganizations, deleteOrganizationCascade } from "@/features/organizations";
+import {
+  useOrganizations,
+  deleteOrganizationCascade,
+  checkOrganizationNameDuplicate,
+  checkOrganizationEmailDuplicate,
+  checkOrganizationPhoneDuplicate,
+} from "@/features/organizations";
 import { formatDate } from "@/shared/utils/dateUtils";
 import { notify } from "@/core/notifications/notificationService";
 import { STUOnboardingWizardDialog } from "@/components/organizations/STUOnboardingWizardDialog";
@@ -17,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -46,6 +53,8 @@ import {
   Layers,
   Sliders,
   CheckCircle2,
+  Play,
+  Airplay,
 } from "lucide-react";
 import type { IOrganization } from "@/shared/types/organization";
 
@@ -81,6 +90,9 @@ export function OrganizationsPage() {
   const [editEmailError, setEditEmailError] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [editPhoneError, setEditPhoneError] = useState("");
+  const [editModuleError, setEditModuleError] = useState("");
+  const [editRouteError, setEditRouteError] = useState("");
+  const [isValidatingDuplicates, setIsValidatingDuplicates] = useState(false);
   const [editActive, setEditActive] = useState(true);
   const [editPIS, setEditPIS] = useState(true);
   const [editPAS, setEditPAS] = useState(true);
@@ -110,12 +122,61 @@ export function OrganizationsPage() {
     }
   };
 
+  // Real-time onBlur duplicate checks for Edit Organization
+  const handleBlurName = async () => {
+    if (!editingOrg) return;
+    const trimmed = editName.trim();
+    if (!trimmed || trimmed.length < 2) return;
+    if (trimmed.toLowerCase() === (editingOrg.name || "").toLowerCase()) return;
+    try {
+      const isDup = await checkOrganizationNameDuplicate(trimmed, editingOrg.id);
+      if (isDup) {
+        setEditNameError(`An organization with the name "${trimmed}" already exists.`);
+      }
+    } catch (err) {
+      console.warn("Name duplicate check error:", err);
+    }
+  };
+
+  const handleBlurEmail = async () => {
+    if (!editingOrg) return;
+    const trimmed = editEmail.trim();
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!trimmed || !emailRegex.test(trimmed)) return;
+    if (trimmed.toLowerCase() === (editingOrg.email || "").toLowerCase()) return;
+    try {
+      const isDup = await checkOrganizationEmailDuplicate(trimmed, editingOrg.id);
+      if (isDup) {
+        setEditEmailError(`An organization with the email "${trimmed}" already exists.`);
+      }
+    } catch (err) {
+      console.warn("Email duplicate check error:", err);
+    }
+  };
+
+  const handleBlurPhone = async () => {
+    if (!editingOrg) return;
+    const trimmed = editPhone.trim();
+    if (!trimmed || trimmed.length < 7 || trimmed.length > 16) return;
+    if (trimmed === (editingOrg.phone || "")) return;
+    try {
+      const isDup = await checkOrganizationPhoneDuplicate(trimmed, editingOrg.id);
+      if (isDup) {
+        setEditPhoneError(`An organization with the contact number "${trimmed}" already exists.`);
+      }
+    } catch (err) {
+      console.warn("Phone duplicate check error:", err);
+    }
+  };
+
   // Open Edit Dialog
   const handleOpenEdit = (org: IOrganization) => {
     setEditingOrg(org);
     setEditNameError("");
     setEditEmailError("");
     setEditPhoneError("");
+    setEditModuleError("");
+    setEditRouteError("");
     setEditName(org.name || "");
     setEditEmail(org.email || "");
     setEditPhone(org.phone || "");
@@ -159,6 +220,53 @@ export function OrganizationsPage() {
     } else if (trimmedPhone.length < 7 || trimmedPhone.length > 16) {
       setEditPhoneError("Contact number must be between 7 and 16 digits.");
       hasError = true;
+    }
+
+    // Validate modules
+    if (!editPIS && !editPAS && !editITMS) {
+      setEditModuleError("At least one transit module (PIS, PAS, or ITMS) must be enabled.");
+      hasError = true;
+    }
+
+    // Validate PIS routes
+    if (editPIS && !editV1 && !editV2) {
+      setEditRouteError("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
+      hasError = true;
+    }
+
+    if (hasError) return;
+
+    // Check database duplicates before saving
+    try {
+      setIsValidatingDuplicates(true);
+      const [isNameDup, isEmailDup, isPhoneDup] = await Promise.all([
+        trimmedName.toLowerCase() !== (editingOrg.name || "").toLowerCase()
+          ? checkOrganizationNameDuplicate(trimmedName, editingOrg.id)
+          : false,
+        trimmedEmail.toLowerCase() !== (editingOrg.email || "").toLowerCase()
+          ? checkOrganizationEmailDuplicate(trimmedEmail, editingOrg.id)
+          : false,
+        trimmedPhone !== (editingOrg.phone || "")
+          ? checkOrganizationPhoneDuplicate(trimmedPhone, editingOrg.id)
+          : false,
+      ]);
+
+      if (isNameDup) {
+        setEditNameError(`An organization with the name "${trimmedName}" already exists.`);
+        hasError = true;
+      }
+      if (isEmailDup) {
+        setEditEmailError(`An organization with the email "${trimmedEmail}" already exists.`);
+        hasError = true;
+      }
+      if (isPhoneDup) {
+        setEditPhoneError(`An organization with the contact number "${trimmedPhone}" already exists.`);
+        hasError = true;
+      }
+    } catch (err: any) {
+      console.warn("Duplicate pre-check warning:", err);
+    } finally {
+      setIsValidatingDuplicates(false);
     }
 
     if (hasError) return;
@@ -295,6 +403,7 @@ export function OrganizationsPage() {
           </Button>
         </div>
       </div>
+      
 
       {/* Loading Skeletons */}
       {isLoading ? (
@@ -396,26 +505,30 @@ export function OrganizationsPage() {
                        
                       </div>
 
-                      {/* Active Status Interactive Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={() => setStatusConfirmOrg(org)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all shrink-0 cursor-pointer select-none mt-0.5",
-                          org.active
-                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20"
-                            : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                        )}
+                      {/* Active Status Interactive Switch */}
+                      <div
+                        className="flex items-center gap-1.5 shrink-0 mt-0.5"
                         title={`Click to ${org.active ? "suspend" : "activate"} ${org.name}`}
                       >
                         <span
+                          onClick={() => setStatusConfirmOrg(org)}
                           className={cn(
-                            "size-1.5 rounded-full shrink-0",
-                            org.active ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/60"
+                            "text-[10px] font-semibold cursor-pointer select-none transition-colors",
+                            org.active
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-muted-foreground"
                           )}
+                        >
+                          {org.active ? "Active" : "Suspended"}
+                        </span>
+                        <Switch
+                          size="sm"
+                          checked={Boolean(org.active)}
+                          onCheckedChange={() => setStatusConfirmOrg(org)}
+                          aria-label={`Toggle status for ${org.name}`}
+                          className="cursor-pointer data-checked:bg-emerald-600 dark:data-checked:bg-emerald-600"
                         />
-                        <span>{org.active ? "Active" : "Suspended"}</span>
-                      </button>
+                      </div>
                     </div>
                   </CardHeader>
 
@@ -457,8 +570,11 @@ export function OrganizationsPage() {
                       <div className="flex flex-wrap gap-1">
                         {org.PIS && (
                           <Badge className="text-[10px] px-1.5 py-0 h-4.5 bg-blue-600 hover:bg-blue-600 text-white gap-1 font-medium shadow-none">
-                            <Radio className="h-2.5 w-2.5" />
-                            PIS
+                            <Airplay className="h-2.5 w-2.5" />
+                            
+                            {(org.v2_routes && org.v1_routes) && 'PIS - V1 & V2'} 
+                            {(org.v2_routes && !org.v1_routes) && 'PIS -V2'}
+                            {(!org.v2_routes && org.v1_routes) && 'PIS -V1'}
                           </Badge>
                         )}
                         {org.PAS && (
@@ -473,22 +589,7 @@ export function OrganizationsPage() {
                             ITMS
                           </Badge>
                         )}
-                        {org.v2_routes && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0 h-4.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-500/5 font-medium"
-                          >
-                            V2
-                          </Badge>
-                        )}
-                        {org.v1_routes && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] px-1.5 py-0 h-4.5 border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-500/5 font-medium"
-                          >
-                            V1
-                          </Badge>
-                        )}
+                       
                         {!org.PIS && !org.PAS && !org.ITMS && !org.v1_routes && !org.v2_routes && (
                           <span className="text-[10px] text-muted-foreground italic">None configured</span>
                         )}
@@ -564,6 +665,7 @@ export function OrganizationsPage() {
                       setEditName(e.target.value);
                       if (editNameError) setEditNameError("");
                     }}
+                    onBlur={handleBlurName}
                     placeholder="e.g. KSRTC"
                     className={cn(
                       "h-9 text-xs",
@@ -591,6 +693,7 @@ export function OrganizationsPage() {
                       setEditEmail(e.target.value);
                       if (editEmailError) setEditEmailError("");
                     }}
+                    onBlur={handleBlurEmail}
                     placeholder="contact@agency.gov.in"
                     className={cn(
                       "h-9 text-xs",
@@ -616,6 +719,7 @@ export function OrganizationsPage() {
                       setEditPhone(e.target.value);
                       if (editPhoneError) setEditPhoneError("");
                     }}
+                    onBlur={handleBlurPhone}
                     placeholder="+91 80 2222 1111"
                     className={cn(
                       "h-9 text-xs",
@@ -650,6 +754,10 @@ export function OrganizationsPage() {
                       if (next && !editV1 && !editV2) {
                         setEditV2(true);
                       }
+                      setEditRouteError("");
+                      if (next || editPAS || editITMS) {
+                        setEditModuleError("");
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
@@ -658,6 +766,10 @@ export function OrganizationsPage() {
                         setEditPIS(next);
                         if (next && !editV1 && !editV2) {
                           setEditV2(true);
+                        }
+                        setEditRouteError("");
+                        if (next || editPAS || editITMS) {
+                          setEditModuleError("");
                         }
                       }
                     }}
@@ -670,7 +782,7 @@ export function OrganizationsPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
-                        <Radio className="h-4 w-4 text-blue-600 shrink-0" />
+                        <Airplay className="h-4 w-4 text-blue-600 shrink-0" />
                         <span>PIS Displays</span>
                       </div>
                       <Checkbox
@@ -689,11 +801,21 @@ export function OrganizationsPage() {
                     role="checkbox"
                     aria-checked={editPAS}
                     tabIndex={0}
-                    onClick={() => setEditPAS(!editPAS)}
+                    onClick={() => {
+                      const next = !editPAS;
+                      setEditPAS(next);
+                      if (next || editPIS || editITMS) {
+                        setEditModuleError("");
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
                         e.preventDefault();
-                        setEditPAS(!editPAS);
+                        const next = !editPAS;
+                        setEditPAS(next);
+                        if (next || editPIS || editITMS) {
+                          setEditModuleError("");
+                        }
                       }
                     }}
                     className={cn(
@@ -724,11 +846,21 @@ export function OrganizationsPage() {
                     role="checkbox"
                     aria-checked={editITMS}
                     tabIndex={0}
-                    onClick={() => setEditITMS(!editITMS)}
+                    onClick={() => {
+                      const next = !editITMS;
+                      setEditITMS(next);
+                      if (next || editPIS || editPAS) {
+                        setEditModuleError("");
+                      }
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
                         e.preventDefault();
-                        setEditITMS(!editITMS);
+                        const next = !editITMS;
+                        setEditITMS(next);
+                        if (next || editPIS || editPAS) {
+                          setEditModuleError("");
+                        }
                       }
                     }}
                     className={cn(
@@ -795,11 +927,18 @@ export function OrganizationsPage() {
                   </div>
                 </div>
 
+                {editModuleError && (
+                  <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
+                    <AlertCircle className="h-3 w-3 shrink-0" />
+                    <span>{editModuleError}</span>
+                  </p>
+                )}
+
                 {/* PIS Features: V1 & V2 Route Access (shown only if PIS is checked) */}
                 {editPIS && (
                   <div className="space-y-2 pt-2 border-t border-border/70 animate-in fade-in-50 duration-200">
                     <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                      PIS Route Formats & Display Engines
+                      PIS Route Formats & Display Engines *
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {/* V2 Route Engine */}
@@ -807,17 +946,33 @@ export function OrganizationsPage() {
                         role="checkbox"
                         aria-checked={editV2}
                         tabIndex={0}
-                        onClick={() => setEditV2(!editV2)}
+                        onClick={() => {
+                          const nextV2 = !editV2;
+                          setEditV2(nextV2);
+                          if (nextV2 || editV1) {
+                            setEditRouteError("");
+                          } else {
+                            setEditRouteError("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === " " || e.key === "Enter") {
                             e.preventDefault();
-                            setEditV2(!editV2);
+                            const nextV2 = !editV2;
+                            setEditV2(nextV2);
+                            if (nextV2 || editV1) {
+                              setEditRouteError("");
+                            } else {
+                              setEditRouteError("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
+                            }
                           }
                         }}
                         className={cn(
                           "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
                           editV2
                             ? "border-emerald-500/70 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
+                            : editRouteError
+                            ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
                             : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
                         )}
                       >
@@ -842,17 +997,33 @@ export function OrganizationsPage() {
                         role="checkbox"
                         aria-checked={editV1}
                         tabIndex={0}
-                        onClick={() => setEditV1(!editV1)}
+                        onClick={() => {
+                          const nextV1 = !editV1;
+                          setEditV1(nextV1);
+                          if (nextV1 || editV2) {
+                            setEditRouteError("");
+                          } else {
+                            setEditRouteError("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === " " || e.key === "Enter") {
                             e.preventDefault();
-                            setEditV1(!editV1);
+                            const nextV1 = !editV1;
+                            setEditV1(nextV1);
+                            if (nextV1 || editV2) {
+                              setEditRouteError("");
+                            } else {
+                              setEditRouteError("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
+                            }
                           }
                         }}
                         className={cn(
                           "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
                           editV1
                             ? "border-amber-500/70 bg-amber-500/5 text-foreground ring-1 ring-amber-500/20 shadow-2xs"
+                            : editRouteError
+                            ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
                             : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
                         )}
                       >
@@ -872,6 +1043,13 @@ export function OrganizationsPage() {
                         </p>
                       </div>
                     </div>
+
+                    {editRouteError && (
+                      <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
+                        <AlertCircle className="h-3 w-3 shrink-0" />
+                        <span>{editRouteError}</span>
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -891,13 +1069,13 @@ export function OrganizationsPage() {
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={isUpdating}
+                  disabled={isUpdating || isValidatingDuplicates}
                   className="text-xs font-semibold gap-1.5"
                 >
-                  {isUpdating ? (
+                  {isUpdating || isValidatingDuplicates ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Saving...
+                      {isValidatingDuplicates ? "Validating..." : "Saving..."}
                     </>
                   ) : (
                     <>

@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { cn } from "cn";
+import { supabase } from "@/integrations/supabase/client";
 import {
   provisionSTUOrganization,
   checkOrganizationNameDuplicate,
   checkOrganizationEmailDuplicate,
+  checkOrganizationPhoneDuplicate,
 } from "@/features/organizations";
 import { notify } from "@/core/notifications/notificationService";
 import {
@@ -316,6 +318,12 @@ export function STUOnboardingWizardDialog({
           setErrors({ email: `An organization with the email "${trimmedEmail}" already exists.` });
           return;
         }
+
+        const phoneDuplicate = await checkOrganizationPhoneDuplicate(trimmedPhone);
+        if (phoneDuplicate) {
+          setErrors({ phone: `An organization with the phone number "${trimmedPhone}" already exists.` });
+          return;
+        }
       } catch (err: any) {
         console.warn("Duplicate pre-check warning:", err);
       } finally {
@@ -379,6 +387,25 @@ export function STUOnboardingWizardDialog({
     const step5Errors: Record<string, string> = {};
     const trimmedAdminEmail = adminEmail.trim();
 
+    // Verify transit modules & route capabilities before submitting
+    if (enablePIS && !enableV1Routes && !enableV2Routes) {
+      setErrors({
+        submit: "At least one route format engine (V1 or V2) must be selected when PIS is enabled.",
+        routes: "At least one route format engine (V1 or V2) must be selected when PIS is enabled.",
+      });
+      setCurrentStep(2);
+      return;
+    }
+
+    if (!enablePIS && !enablePAS && !enableITMS) {
+      setErrors({
+        submit: "At least one intelligent transit module (PIS, PAS, or ITMS) must be enabled.",
+        modules: "At least one intelligent transit module (PIS, PAS, or ITMS) must be enabled.",
+      });
+      setCurrentStep(2);
+      return;
+    }
+
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!trimmedAdminEmail) {
       step5Errors.adminEmail = "Administrator login email is required.";
@@ -429,7 +456,18 @@ export function STUOnboardingWizardDialog({
       onOpenChange(false);
       onSuccess?.();
     } catch (err: any) {
-      setErrors({ submit: err.message || "Failed to create organization." });
+      const msg = err?.message || "Failed to create organization.";
+      const lower = msg.toLowerCase();
+      if (
+        lower.includes("admin email") ||
+        lower.includes("already registered in authentication") ||
+        lower.includes("already registered to another organization") ||
+        lower.includes("user with email")
+      ) {
+        setErrors({ adminEmail: msg });
+      } else {
+        setErrors({ submit: msg });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -514,6 +552,22 @@ export function STUOnboardingWizardDialog({
                   setName(e.target.value);
                   clearError("name");
                 }}
+                onBlur={async () => {
+                  const trimmed = name.trim();
+                  if (trimmed && trimmed.length >= 2) {
+                    try {
+                      const isDup = await checkOrganizationNameDuplicate(trimmed);
+                      if (isDup) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          name: `An organization with the name "${trimmed}" already exists.`,
+                        }));
+                      }
+                    } catch (err) {
+                      console.warn("Name duplicate check error:", err);
+                    }
+                  }
+                }}
                 placeholder="e.g. Karnataka State Road Transport Corporation (KSRTC)"
                 aria-invalid={Boolean(errors.name)}
                 autoFocus
@@ -535,6 +589,23 @@ export function STUOnboardingWizardDialog({
                     setEmail(e.target.value);
                     clearError("email");
                   }}
+                  onBlur={async () => {
+                    const trimmed = email.trim();
+                    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+                    if (trimmed && emailRegex.test(trimmed)) {
+                      try {
+                        const isDup = await checkOrganizationEmailDuplicate(trimmed);
+                        if (isDup) {
+                          setErrors((prev) => ({
+                            ...prev,
+                            email: `An organization with the email "${trimmed}" already exists.`,
+                          }));
+                        }
+                      } catch (err) {
+                        console.warn("Email duplicate check error:", err);
+                      }
+                    }
+                  }}
                   placeholder="contact@agency.gov.in"
                   aria-invalid={Boolean(errors.email)}
                 />
@@ -552,6 +623,22 @@ export function STUOnboardingWizardDialog({
                   onChange={(e) => {
                     setPhone(e.target.value);
                     clearError("phone");
+                  }}
+                  onBlur={async () => {
+                    const trimmed = phone.trim();
+                    if (trimmed && trimmed.length >= 7 && trimmed.length <= 16) {
+                      try {
+                        const isDup = await checkOrganizationPhoneDuplicate(trimmed);
+                        if (isDup) {
+                          setErrors((prev) => ({
+                            ...prev,
+                            phone: `An organization with the phone number "${trimmed}" already exists.`,
+                          }));
+                        }
+                      } catch (err) {
+                        console.warn("Phone duplicate check error:", err);
+                      }
+                    }
                   }}
                   placeholder="+91 80 2222 1111"
                   aria-invalid={Boolean(errors.phone)}
@@ -725,6 +812,7 @@ export function STUOnboardingWizardDialog({
                 </p>
               </div>
             </div>
+            <FieldErrorText message={errors.modules} />
 
             {/* Section 2: PIS Features Header & Route Access (shown only if PIS is checked) */}
             {enablePIS && (
@@ -732,14 +820,14 @@ export function STUOnboardingWizardDialog({
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-foreground block">
-                      PIS Route Display Engines
+                      PIS Route Display Engines *
                     </span>
                     <span className="text-[10px] text-muted-foreground font-medium">
                       PIS Sub-Features
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Select supported route format engines for LED destination boards and in-bus screens.
+                    Select supported route format engines for LED destination boards and in-bus screens (select V1, V2, or both).
                   </p>
                 </div>
 
@@ -750,20 +838,38 @@ export function STUOnboardingWizardDialog({
                     aria-checked={enableV2Routes}
                     tabIndex={0}
                     onClick={() => {
-                      setEnableV2Routes(!enableV2Routes);
-                      clearError("routes");
+                      const nextV2 = !enableV2Routes;
+                      setEnableV2Routes(nextV2);
+                      if (nextV2 || enableV1Routes) {
+                        clearError("routes");
+                      } else {
+                        setErrors((prev) => ({
+                          ...prev,
+                          routes: "At least one route format engine (V1 or V2) must be selected when PIS is enabled.",
+                        }));
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
                         e.preventDefault();
-                        setEnableV2Routes(!enableV2Routes);
-                        clearError("routes");
+                        const nextV2 = !enableV2Routes;
+                        setEnableV2Routes(nextV2);
+                        if (nextV2 || enableV1Routes) {
+                          clearError("routes");
+                        } else {
+                          setErrors((prev) => ({
+                            ...prev,
+                            routes: "At least one route format engine (V1 or V2) must be selected when PIS is enabled.",
+                          }));
+                        }
                       }
                     }}
                     className={cn(
                       "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
                       enableV2Routes
                         ? "border-emerald-500/70 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
+                        : errors.routes
+                        ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
                         : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
                     )}
                   >
@@ -789,20 +895,38 @@ export function STUOnboardingWizardDialog({
                     aria-checked={enableV1Routes}
                     tabIndex={0}
                     onClick={() => {
-                      setEnableV1Routes(!enableV1Routes);
-                      clearError("routes");
+                      const nextV1 = !enableV1Routes;
+                      setEnableV1Routes(nextV1);
+                      if (nextV1 || enableV2Routes) {
+                        clearError("routes");
+                      } else {
+                        setErrors((prev) => ({
+                          ...prev,
+                          routes: "At least one route format engine (V1 or V2) must be selected when PIS is enabled.",
+                        }));
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.key === "Enter") {
                         e.preventDefault();
-                        setEnableV1Routes(!enableV1Routes);
-                        clearError("routes");
+                        const nextV1 = !enableV1Routes;
+                        setEnableV1Routes(nextV1);
+                        if (nextV1 || enableV2Routes) {
+                          clearError("routes");
+                        } else {
+                          setErrors((prev) => ({
+                            ...prev,
+                            routes: "At least one route format engine (V1 or V2) must be selected when PIS is enabled.",
+                          }));
+                        }
                       }
                     }}
                     className={cn(
                       "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
                       enableV1Routes
                         ? "border-amber-500/70 bg-amber-500/5 text-foreground ring-1 ring-amber-500/20 shadow-2xs"
+                        : errors.routes
+                        ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
                         : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
                     )}
                   >
@@ -822,10 +946,9 @@ export function STUOnboardingWizardDialog({
                     </p>
                   </div>
                 </div>
+                <FieldErrorText message={errors.routes} />
               </div>
             )}
-
-            <FieldErrorText message={errors.modules || errors.routes} />
           </div>
         )}
 
@@ -1141,6 +1264,28 @@ export function STUOnboardingWizardDialog({
                       setAdminEmail(e.target.value);
                       clearError("adminEmail");
                     }}
+                    onBlur={async () => {
+                      const trimmed = adminEmail.trim();
+                      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+                      if (trimmed && emailRegex.test(trimmed)) {
+                        try {
+                          const { data: existingUser } = await supabase
+                            .from("users")
+                            .select("id, organization_id, deleted")
+                            .eq("email", trimmed)
+                            .maybeSingle();
+
+                          if (existingUser && existingUser.organization_id && !existingUser.deleted) {
+                            setErrors((prev) => ({
+                              ...prev,
+                              adminEmail: `A user with email "${trimmed}" is already registered to another organization.`,
+                            }));
+                          }
+                        } catch (err) {
+                          console.warn("Admin email pre-check warning:", err);
+                        }
+                      }
+                    }}
                     placeholder="admin@agency.gov.in"
                     autoComplete="off"
                     aria-invalid={Boolean(errors.adminEmail)}
@@ -1225,7 +1370,9 @@ export function STUOnboardingWizardDialog({
                   <div className="flex flex-wrap gap-1">
                     {enablePIS && (
                       <Badge variant="outline" className="text-[10px] py-0 px-1 bg-blue-500/10 text-blue-600 border-blue-200">
-                        PIS
+                            {(enableV2Routes && enableV1Routes) && 'PIS - V1 & V2'} 
+                            {(enableV2Routes && !enableV1Routes) && 'PIS -V2'}
+                            {(!enableV2Routes && enableV1Routes) && 'PIS -V1'}
                       </Badge>
                     )}
                     {enablePAS && (
@@ -1238,16 +1385,7 @@ export function STUOnboardingWizardDialog({
                         ITMS
                       </Badge>
                     )}
-                    {enablePIS && enableV2Routes && (
-                      <Badge variant="outline" className="text-[10px] py-0 px-1 bg-emerald-500/10 text-emerald-600 border-emerald-200">
-                        V2
-                      </Badge>
-                    )}
-                    {enablePIS && enableV1Routes && (
-                      <Badge variant="outline" className="text-[10px] py-0 px-1 bg-amber-500/10 text-amber-600 border-amber-200">
-                        V1
-                      </Badge>
-                    )}
+                    
                   </div>
                 </div>
               </div>

@@ -69,6 +69,30 @@ export async function checkOrganizationEmailDuplicate(
   return Boolean(data && data.length > 0);
 }
 
+export async function checkOrganizationPhoneDuplicate(
+  phone: string,
+  excludeId?: string
+): Promise<boolean> {
+  const trimmed = phone.trim();
+  if (!trimmed) return false;
+
+  let query = supabase
+    .from("organizations")
+    .select("id")
+    .ilike("phone", trimmed.replace(/[\\%_]/g, "\\$&"));
+
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+
+  const { data, error } = await query.limit(1);
+  if (error) {
+    console.warn("Duplicate check warning for organizations.phone:", error);
+    return false;
+  }
+  return Boolean(data && data.length > 0);
+}
+
 /**
  * Executes the complete transactional provisioning journey for an STU organization:
  * 1. Inserts the organization record
@@ -86,7 +110,15 @@ export async function provisionSTUOrganization(
   const trimmedOrgEmail = organization.email.trim();
   const trimmedAdminEmail = adminUser.email.trim();
 
-  // 1. Pre-validation duplicate checks
+  // 1. Pre-validation checks
+  if (organization.PIS && !organization.v1_routes && !organization.v2_routes) {
+    throw new Error("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
+  }
+
+  if (!organization.PIS && !organization.PAS && !organization.ITMS) {
+    throw new Error("At least one transit module (PIS, PAS, or ITMS) must be enabled.");
+  }
+
   const { data: nameCheck } = await supabase
     .from("organizations")
     .select("id")
@@ -226,7 +258,7 @@ export async function provisionSTUOrganization(
       }
 
       throw new Error(
-        "Admin email is already registered in authentication. Please verify password or use a different email."
+        "Admin email is already registered in authentication. Please use a different email."
       );
     };
 

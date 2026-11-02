@@ -5,6 +5,8 @@ import { RoleGuard } from "../guards/RoleGuard";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { AppShell } from "@/components/layout/AppShell";
 import { OrganizationsPage } from "@/pages/organizations/OrganizationsPage";
+import { RegionsPage } from "@/pages/regions/RegionsPage";
+import { DepotsPage } from "@/pages/depots/DepotsPage";
 import { RoutePlaceholder } from "./RoutePlaceholder";
 import { ROUTES } from "@/navigation/routes";
 import {
@@ -89,9 +91,46 @@ export function AppRouter() {
           }
         />
 
+        {/* Regions Page */}
+        <Route
+          path="regions"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "regions")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "regions")?.features || []
+              }
+            >
+              <RegionsPage />
+            </RoleGuard>
+          }
+        />
+
+        {/* Depots Page */}
+        <Route
+          path="depots"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "depots")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "depots")?.features || []
+              }
+            >
+              <DepotsPage />
+            </RoleGuard>
+          }
+        />
+
         {/* Other Protected Route Boundaries */}
         {PROTECTED_ROUTES_METADATA.filter(
-          (routeMeta) => routeMeta.path !== "organizations"
+          (routeMeta) =>
+            routeMeta.path !== "organizations" &&
+            routeMeta.path !== "regions" &&
+            routeMeta.path !== "depots"
         ).map((routeMeta) => (
           <Route
             key={routeMeta.path}

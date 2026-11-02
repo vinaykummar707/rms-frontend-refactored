@@ -20,6 +20,7 @@ import {
   ChevronsUpDown,
   Search,
   Plus,
+  X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { notify } from "@/core/notifications/notificationService";
@@ -33,19 +34,22 @@ export function GlobalOrgSelector() {
   const superAdmin = isSuperAdmin(user);
 
   const [searchTerm, setSearchTerm] = useState("");
+  const hasFilter = searchTerm.trim().length > 0;
 
   const filteredOrgs = useMemo(() => {
-    if (!searchTerm.trim()) return organizations;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return organizations;
     return organizations.filter(
       (o) =>
-        o.name.toLowerCase().includes(term) ||
-        (o.code && o.code.toLowerCase().includes(term))
+        (o.name && o.name.toLowerCase().includes(term)) ||
+        (o.code && o.code.toLowerCase().includes(term)) ||
+        (o.email && o.email.toLowerCase().includes(term))
     );
   }, [organizations, searchTerm]);
 
   const handleSelectOrg = (org: IOrganization | null) => {
     setSelectedOrganization(org);
+    setSearchTerm("");
     if (org) {
       notify.info(`Active tenant switched to "${org.name}"`);
     } else {
@@ -71,7 +75,7 @@ export function GlobalOrgSelector() {
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => { if (!open) setSearchTerm(""); }}>
       <DropdownMenuTrigger
         render={
           <Button
@@ -95,8 +99,8 @@ export function GlobalOrgSelector() {
       <DropdownMenuContent align="end" className="w-[280px] p-1.5 space-y-1">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs font-semibold px-2 py-1 flex items-center justify-between text-muted-foreground">
-            <span>Active Organization</span>
-            {selectedOrganization && (
+            <span>{hasFilter ? `Matching Organizations (${filteredOrgs.length})` : "Active Organization"}</span>
+            {!hasFilter && selectedOrganization && (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
                 {selectedOrganization.code || "Active"}
               </Badge>
@@ -106,37 +110,54 @@ export function GlobalOrgSelector() {
 
         {/* Search within organizations */}
         <div className="px-1.5 pb-1">
-          <div className="relative">
-            <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+          <div className="relative flex items-center">
+            <Search className="absolute left-2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             <Input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
               placeholder="Filter organizations..."
-              className="h-7 pl-7 text-xs"
+              className="h-7 pl-7 pr-7 text-xs"
               autoFocus={false}
             />
+            {hasFilter && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSearchTerm("");
+                }}
+                className="absolute right-2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
+                aria-label="Clear filter"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
         </div>
 
         <DropdownMenuSeparator />
 
-        {/* Option for 'All Organizations' */}
-        <DropdownMenuItem
-          onClick={() => handleSelectOrg(null)}
-          className="flex items-center justify-between cursor-pointer text-xs py-1.5"
-        >
-          <div className="flex items-center gap-2">
-            <div className="h-4 w-4 rounded border border-dashed flex items-center justify-center">
-              <span className="text-[9px] font-bold">ALL</span>
-            </div>
-            <span className="font-medium">All Organizations</span>
-          </div>
-          {!selectedOrganization && <Check className="h-3.5 w-3.5 text-primary" />}
-        </DropdownMenuItem>
+        {/* Option for 'All Organizations' (shown only when no search filter is active) */}
+        {!hasFilter && (
+          <>
+            <DropdownMenuItem
+              onClick={() => handleSelectOrg(null)}
+              className="flex items-center justify-between cursor-pointer text-xs py-1.5"
+            >
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 rounded border border-dashed flex items-center justify-center">
+                  <span className="text-[9px] font-bold">ALL</span>
+                </div>
+                <span className="font-medium">All Organizations</span>
+              </div>
+              {!selectedOrganization && <Check className="h-3.5 w-3.5 text-primary" />}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
 
-        <DropdownMenuSeparator />
-
-        {/* Organizations List */}
+        {/* Organizations List: displays ONLY matched organizations when filtering */}
         <div className="max-h-[220px] overflow-y-auto space-y-0.5">
           {isLoading ? (
             <div className="py-4 text-center text-xs text-muted-foreground">
@@ -188,7 +209,7 @@ export function GlobalOrgSelector() {
           )}
         </div>
 
-        {superAdmin && (
+        {superAdmin && !hasFilter && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem

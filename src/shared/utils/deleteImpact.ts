@@ -82,8 +82,7 @@ export async function confirmRegionDelete(regionId: string): Promise<boolean> {
   const { data } = await supabase
     .from("depots")
     .select("id")
-    .eq("region_id", regionId)
-    .eq("deleted", false);
+    .eq("region_id", regionId);
   const depotIds = (data ?? []).map((d: { id: string }) => d.id);
   const [routes, stops, users] = await Promise.all([
     countActive("routes", "depot_id", depotIds),

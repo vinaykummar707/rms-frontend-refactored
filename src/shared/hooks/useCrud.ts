@@ -194,7 +194,7 @@ export async function checkActiveDuplicate(
   scopeFilter?: Record<string, any>,
   excludeId?: string,
   extraFilter?: (query: any) => any,
-  checkDeleted: boolean = table !== "organizations"
+  checkDeleted: boolean = !["organizations", "regions", "depots"].includes(table)
 ): Promise<boolean> {
   const trimmed = value.trim();
   if (!trimmed) return false;
@@ -204,8 +204,8 @@ export async function checkActiveDuplicate(
     .select("id")
     .ilike(column, trimmed.replace(/[\\%_]/g, "\\$&"));
 
-  // The 'organizations' table does not have a soft-delete column; skip 'deleted' check for it
-  if (checkDeleted && table !== "organizations") {
+  // Only check 'deleted' if the table supports soft-delete ('organizations', 'regions', and 'depots' do not have a deleted column)
+  if (checkDeleted && !["organizations", "regions", "depots"].includes(table)) {
     query = query.not("deleted", "is", true);
   }
 

@@ -39,7 +39,6 @@ import {
   Phone,
   Mail,
   Calendar,
-  Radio,
   RefreshCw,
   Sparkles,
   Pencil,
@@ -53,7 +52,6 @@ import {
   Layers,
   Sliders,
   CheckCircle2,
-  Play,
   Airplay,
 } from "lucide-react";
 import type { IOrganization } from "@/shared/types/organization";

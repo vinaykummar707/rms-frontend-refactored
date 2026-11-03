@@ -10,5 +10,7 @@ export default defineConfig({
     alias: {
       "@": resolve(import.meta.dirname, "./src"),
     },
-  },
+  },server :{
+    port:9092
+  }
 })

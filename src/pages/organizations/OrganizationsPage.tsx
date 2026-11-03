@@ -155,12 +155,19 @@ export function OrganizationsPage() {
   const handleBlurPhone = async () => {
     if (!editingOrg) return;
     const trimmed = editPhone.trim();
-    if (!trimmed || trimmed.length < 7 || trimmed.length > 16) return;
+    if (!trimmed) {
+      setEditPhoneError("Mobile number is required.");
+      return;
+    }
+    if (trimmed.length !== 10 || !/^\d{10}$/.test(trimmed)) {
+      setEditPhoneError("Mobile number must be exactly 10 digits.");
+      return;
+    }
     if (trimmed === (editingOrg.phone || "")) return;
     try {
       const isDup = await checkOrganizationPhoneDuplicate(trimmed, editingOrg.id);
       if (isDup) {
-        setEditPhoneError(`An organization with the contact number "${trimmed}" already exists.`);
+        setEditPhoneError(`An organization with the mobile number "${trimmed}" already exists.`);
       }
     } catch (err) {
       console.warn("Phone duplicate check error:", err);
@@ -213,10 +220,10 @@ export function OrganizationsPage() {
 
     const trimmedPhone = editPhone.trim();
     if (!trimmedPhone) {
-      setEditPhoneError("Contact number is required.");
+      setEditPhoneError("Mobile number is required.");
       hasError = true;
-    } else if (trimmedPhone.length < 7 || trimmedPhone.length > 16) {
-      setEditPhoneError("Contact number must be between 7 and 16 digits.");
+    } else if (trimmedPhone.length !== 10 || !/^\d{10}$/.test(trimmedPhone)) {
+      setEditPhoneError("Mobile number must be exactly 10 digits.");
       hasError = true;
     }
 
@@ -632,7 +639,16 @@ export function OrganizationsPage() {
       />
 
       {/* Edit Organization Dialog */}
-      <Dialog open={!!editingOrg} onOpenChange={(open) => !open && setEditingOrg(null)}>
+      <Dialog
+        open={!!editingOrg}
+        onOpenChange={(open, details) => {
+          if (!open && (details?.reason === "outside-press" || (details as any)?.reason === "outsidePress")) {
+            return;
+          }
+          if (!open) setEditingOrg(null);
+        }}
+        disablePointerDismissal={true}
+      >
         <DialogContent className="sm:max-w-4xl p-6">
           <DialogHeader className="pb-3 border-b border-border">
             <div className="flex items-center gap-2">
@@ -708,17 +724,21 @@ export function OrganizationsPage() {
 
                 <div className="space-y-1">
                   <Label htmlFor="edit-org-phone" className="text-xs font-semibold">
-                    Contact Number *
+                    Mobile Number *
                   </Label>
                   <Input
                     id="edit-org-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
                     value={editPhone}
                     onChange={(e) => {
-                      setEditPhone(e.target.value);
+                      const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                      setEditPhone(digitsOnly);
                       if (editPhoneError) setEditPhoneError("");
                     }}
                     onBlur={handleBlurPhone}
-                    placeholder="+91 80 2222 1111"
+                    placeholder="e.g. 9876543210"
                     className={cn(
                       "h-9 text-xs",
                       editPhoneError && "border-destructive focus-visible:ring-destructive/20"
@@ -1089,7 +1109,21 @@ export function OrganizationsPage() {
       </Dialog>
 
       {/* Status Change Confirmation Dialog */}
-      <Dialog open={!!statusConfirmOrg} onOpenChange={(open) => !open && setStatusConfirmOrg(null)}>
+      <Dialog
+        open={!!statusConfirmOrg}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setStatusConfirmOrg(null);
+          }
+        }}
+        disablePointerDismissal={true}
+      >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader>
             <div
@@ -1163,7 +1197,21 @@ export function OrganizationsPage() {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deletingOrg} onOpenChange={(open) => !open && setDeletingOrg(null)}>
+      <Dialog
+        open={!!deletingOrg}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setDeletingOrg(null);
+          }
+        }}
+        disablePointerDismissal={true}
+      >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader>
             <div className="h-10 w-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mb-2">

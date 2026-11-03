@@ -47,7 +47,7 @@ export async function createReturnRoute(
     throw new Error(`Failed to fetch original route: ${fetchError?.message || "Route not found"}`);
   }
 
-  const { id: _unusedId, ...routeWithoutId } = originalRoute;
+  const { id: _, ...routeWithoutId } = originalRoute;
 
   // 1. Reverse stops
   let reversedStops = originalRoute.stops;
@@ -143,7 +143,7 @@ export async function duplicateRoute(
     throw new Error(`Failed to fetch route to duplicate: ${fetchError?.message || "Route not found"}`);
   }
 
-  const { id: _unusedId, ...routeWithoutId } = originalRoute;
+  const { id: _, ...routeWithoutId } = originalRoute;
   const baseNumber = (originalRoute.route_number || "").trim();
   const suffix = routeNumberSuffix === " (Copy)" ? "D" : routeNumberSuffix || "D";
   let candidateNumber = `${baseNumber}${suffix}`;
@@ -156,6 +156,22 @@ export async function duplicateRoute(
       .ilike("route_number", candidateNumber)
       .maybeSingle();
 
+    if (existing) {
+      candidateNumber = `${baseNumber}${suffix}1`;
+    }
+  } else {
+    const creatorId = userId || originalRoute.created_by || "";
+    let q = supabase
+      .from("routes")
+      .select("id")
+      .is("depot_id", null)
+      .ilike("route_number", candidateNumber);
+
+    if (creatorId) {
+      q = q.eq("created_by", creatorId);
+    }
+
+    const { data: existing } = await q.maybeSingle();
     if (existing) {
       candidateNumber = `${baseNumber}${suffix}1`;
     }
@@ -203,7 +219,7 @@ export function parseRouteSignboardField(val: any): any {
 export async function exportRoutes(
   routes: IRoute[],
   format: "v1" | "v2",
-  scope?: { organizationId?: string; depotId?: string }
+  scope?: { organizationId?: string; depotId?: string; fileNamePrefix?: string }
 ): Promise<void> {
   if (!routes.length) {
     throw new Error("No routes provided for export");
@@ -219,6 +235,7 @@ export async function exportRoutes(
   }));
 
   const currentDate = new Date().toISOString().split("T")[0];
+  const filePrefix = scope?.fileNamePrefix || "routes";
   const apiBase = env.VITE_CONTROLLER_API_URL;
   const areaId = scope?.organizationId || routes[0]?.organization_id || "";
   const depotId = scope?.depotId || routes[0]?.depot_id || "";
@@ -236,7 +253,7 @@ export async function exportRoutes(
         return new Blob([response.data], { type: "application/zip" });
       });
 
-      await writeZipToDirectoryOrFallback(blob, `routes_export_v1_${currentDate}.zip`);
+      await writeZipToDirectoryOrFallback(blob, `${filePrefix}_export_v1_${currentDate}.zip`);
     } catch (error: any) {
       const msg = await getExportErrorMessage(error);
       throw new Error(`V1 export failed: ${msg}`);
@@ -253,7 +270,7 @@ export async function exportRoutes(
         return new Blob([response.data], { type: "application/zip" });
       });
 
-      await writeZipToDirectoryOrFallback(blob, `routes_export_v2_${currentDate}.zip`);
+      await writeZipToDirectoryOrFallback(blob, `${filePrefix}_export_v2_${currentDate}.zip`);
     } catch (error: any) {
       const msg = await getExportErrorMessage(error);
       throw new Error(`V2 export failed: ${msg}`);

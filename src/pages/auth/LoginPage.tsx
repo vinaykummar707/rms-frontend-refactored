@@ -248,7 +248,7 @@ export function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
+                    placeholder="Enter your password"
                     autoComplete="current-password"
                     disabled={isSubmitting}
                     className="pl-9 pr-10 text-sm h-10"

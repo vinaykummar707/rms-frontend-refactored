@@ -386,8 +386,8 @@ export function DepotsPage() {
       {/* Action Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Search and Region Filter Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 max-w-xl">
-          <div className="relative flex-1">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 max-w-2xl">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input
               value={searchTerm}
@@ -399,36 +399,44 @@ export function DepotsPage() {
 
           {/* Region Selector Dropdown */}
           {!isRegionOrDepotAdmin && regions.length > 0 && (
-            <div className="w-full sm:w-[200px] shrink-0">
-              <Select
-                value={selectedRegion?.id ?? ""}
-                onValueChange={(val) => {
-                  if (val) {
-                    const match = regions.find((r) => r.id === val);
-                    if (match) setDepotsPageRegion(match);
-                  }
-                }}
-                items={regionItems}
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <Label
+                htmlFor="depot-region-filter"
+                className="text-xs font-semibold text-foreground whitespace-nowrap"
               >
-                <SelectTrigger className="h-9 text-xs w-full">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <SelectValue placeholder="Select region...">
-                      {(val: string | null) => {
-                        if (!val) return null;
-                        return regionMap.get(val) || val;
-                      }}
-                    </SelectValue>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {regions.map((reg) => (
-                    <SelectItem key={reg.id} value={reg.id}>
-                      {reg.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                Select Region:
+              </Label>
+              <div className="w-full sm:w-[200px]">
+                <Select
+                  value={selectedRegion?.id ?? ""}
+                  onValueChange={(val) => {
+                    if (val) {
+                      const match = regions.find((r) => r.id === val);
+                      if (match) setDepotsPageRegion(match);
+                    }
+                  }}
+                  items={regionItems}
+                >
+                  <SelectTrigger id="depot-region-filter" className="h-9 text-xs w-full">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <SelectValue placeholder="Select region...">
+                        {(val: string | null) => {
+                          if (!val) return null;
+                          return regionMap.get(val) || val;
+                        }}
+                      </SelectValue>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {regions.map((reg) => (
+                      <SelectItem key={reg.id} value={reg.id}>
+                        {reg.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
         </div>
@@ -653,7 +661,21 @@ export function DepotsPage() {
       )}
 
       {/* Create Depot Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setIsCreateOpen(false);
+          }
+        }}
+        disablePointerDismissal={true}
+      >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader className="pb-3 border-b border-border">
             <div className="flex items-center gap-2">
@@ -774,7 +796,18 @@ export function DepotsPage() {
       {/* Edit Depot Dialog */}
       <Dialog
         open={Boolean(editingDepot)}
-        onOpenChange={(open) => !open && setEditingDepot(null)}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setEditingDepot(null);
+          }
+        }}
+        disablePointerDismissal={true}
       >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader className="pb-3 border-b border-border">
@@ -895,7 +928,18 @@ export function DepotsPage() {
       {/* Delete Depot Confirmation Dialog */}
       <Dialog
         open={Boolean(deletingDepot)}
-        onOpenChange={(open) => !open && setDeletingDepot(null)}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setDeletingDepot(null);
+          }
+        }}
+        disablePointerDismissal={true}
       >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader>

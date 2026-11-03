@@ -14,6 +14,9 @@ export interface ProvisionUserInput {
   customer_type?: "regular" | "stu";
   v1_routes?: boolean;
   v2_routes?: boolean;
+  PIS?: boolean;
+  PAS?: boolean;
+  ITMS?: boolean;
 }
 
 /**
@@ -28,32 +31,68 @@ export async function checkHierarchyUniqueness(
     organizationId?: string | null;
     regionId?: string | null;
     depotId?: string | null;
+    roleId?: string | null;
   },
   excludeUserId?: string
 ): Promise<boolean> {
-  const lowerRole = roleName.toLowerCase();
+  const lowerRole = (roleName || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
 
-  if (lowerRole === "organization_admin" && targetScope.organizationId) {
+  // Determine targetRoleId if not directly supplied
+  let targetRoleId = targetScope.roleId;
+  if (!targetRoleId) {
+    const { data: roleData } = await supabase
+      .from("roles")
+      .select("id")
+      .or(`name.eq.${lowerRole},name.ilike.${lowerRole.replace(/_/g, " ")}`)
+      .maybeSingle();
+    targetRoleId = roleData?.id || null;
+  }
+
+  if (
+    (lowerRole === "organization_admin" || lowerRole === "org_admin") &&
+    targetScope.organizationId
+  ) {
     let query = supabase
       .from("users")
       .select("id")
-      .eq("organization_id", targetScope.organizationId)
-      .eq("deleted", false);
+      .eq("organization_id", targetScope.organizationId);
 
-    if (excludeUserId) query = query.neq("id", excludeUserId);
-    const { data } = await query;
+    if (targetRoleId) {
+      query = query.eq("role_id", targetRoleId);
+    }
+    if (excludeUserId) {
+      query = query.neq("id", excludeUserId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("checkHierarchyUniqueness org admin query error:", error);
+      return false;
+    }
     return Boolean(data && data.length > 0);
   }
 
-  if (lowerRole === "region_admin" && targetScope.regionId) {
+  if (
+    (lowerRole === "region_admin" || lowerRole === "area_admin") &&
+    targetScope.regionId
+  ) {
     let query = supabase
       .from("users")
       .select("id")
-      .eq("region_id", targetScope.regionId)
-      .eq("deleted", false);
+      .eq("region_id", targetScope.regionId);
 
-    if (excludeUserId) query = query.neq("id", excludeUserId);
-    const { data } = await query;
+    if (targetRoleId) {
+      query = query.eq("role_id", targetRoleId);
+    }
+    if (excludeUserId) {
+      query = query.neq("id", excludeUserId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("checkHierarchyUniqueness region admin query error:", error);
+      return false;
+    }
     return Boolean(data && data.length > 0);
   }
 
@@ -61,11 +100,20 @@ export async function checkHierarchyUniqueness(
     let query = supabase
       .from("users")
       .select("id")
-      .eq("depot_id", targetScope.depotId)
-      .eq("deleted", false);
+      .eq("depot_id", targetScope.depotId);
 
-    if (excludeUserId) query = query.neq("id", excludeUserId);
-    const { data } = await query;
+    if (targetRoleId) {
+      query = query.eq("role_id", targetRoleId);
+    }
+    if (excludeUserId) {
+      query = query.neq("id", excludeUserId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error("checkHierarchyUniqueness depot admin query error:", error);
+      return false;
+    }
     return Boolean(data && data.length > 0);
   }
 
@@ -83,11 +131,11 @@ export async function provisionUser(
   // 1. Check if user with this email already exists in public.users
   const { data: existingUser } = await supabase
     .from("users")
-    .select("id, organization_id, deleted")
+    .select("id, organization_id")
     .eq("email", trimmedEmail)
     .maybeSingle();
 
-  if (existingUser && !existingUser.deleted && existingUser.organization_id) {
+  if (existingUser && existingUser.organization_id) {
     throw new Error(
       `A user with email "${trimmedEmail}" is already registered in the system.`
     );
@@ -123,23 +171,35 @@ export async function provisionUser(
   }
 
   // 2. Insert into public.users
-  const { data: userRecord, error: insertError } = await supabase
+  const insertPayload: Record<string, any> = {
+    email: trimmedEmail,
+    user_id: authUserId,
+    password: input.password || null,
+    organization_id: input.organization_id || null,
+    region_id: input.region_id || null,
+    depot_id: input.depot_id || null,
+    role_id: input.role_id,
+    active: input.active ?? true,
+    customer_type: input.customer_type || "stu",
+    v1_routes: input.v1_routes ?? false,
+    v2_routes: input.v2_routes ?? true,
+    PIS: input.PIS ?? true,
+    PAS: input.PAS ?? false,
+    ITMS: input.ITMS ?? false,
+  };
+
+  let { data: userRecord, error: insertError } = await supabase
     .from("users")
-    .insert({
-      email: trimmedEmail,
-      user_id: authUserId,
-      password: input.password || null,
-      organization_id: input.organization_id || null,
-      region_id: input.region_id || null,
-      depot_id: input.depot_id || null,
-      role_id: input.role_id,
-      active: input.active ?? true,
-      customer_type: input.customer_type || "stu",
-      v1_routes: input.v1_routes ?? false,
-      v2_routes: input.v2_routes ?? true,
-    })
+    .insert(insertPayload)
     .select()
     .single();
+
+  if (insertError && (insertError.code === "PGRST204" || insertError.code === "42703")) {
+    const { PIS, PAS, ITMS, ...fbPayload } = insertPayload;
+    const res = await supabase.from("users").insert(fbPayload).select().single();
+    userRecord = res.data;
+    insertError = res.error;
+  }
 
   if (insertError || !userRecord) {
     throw new Error(`Failed to create database user record: ${insertError?.message || "Unknown error"}`);

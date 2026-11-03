@@ -43,6 +43,9 @@ export interface IUser {
   v2_routes?: boolean | null;
   customer_type?: "regular" | "stu" | null;
   deleted?: boolean;
+  PIS?: boolean;
+  PAS?: boolean;
+  ITMS?: boolean;
 }
 
 export interface ILoggedUser extends IUser {

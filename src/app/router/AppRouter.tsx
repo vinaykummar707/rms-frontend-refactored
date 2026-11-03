@@ -8,6 +8,10 @@ import { OrganizationsPage } from "@/pages/organizations/OrganizationsPage";
 import { RegionsPage } from "@/pages/regions/RegionsPage";
 import { DepotsPage } from "@/pages/depots/DepotsPage";
 import { RoutesPage } from "@/pages/routes/RoutesPage";
+import { RegularRoutesPage } from "@/pages/regularRoutes/RegularRoutesPage";
+import { UsersPage } from "@/pages/users/UsersPage";
+import { RegularCustomersPage } from "@/pages/regularCustomers/RegularCustomersPage";
+import { CreateRoutePage } from "@/pages/routes/CreateRoutePage";
 import { RoutePlaceholder } from "./RoutePlaceholder";
 import { ROUTES } from "@/navigation/routes";
 import {
@@ -36,27 +40,39 @@ export function AppRouter() {
       />
 
       {/* Standalone Route Editor Paths (V1 & V2) */}
-      {EDITOR_ROUTES_METADATA.map((editorRoute) => (
-        <Route
-          key={editorRoute.path}
-          path={editorRoute.path}
-          element={
-            <AuthGuard>
-              <RoleGuard
-                roles={editorRoute.roles}
-                features={editorRoute.features}
-              >
-                <RoutePlaceholder
-                  title={editorRoute.title}
-                  path={editorRoute.path}
-                  description={editorRoute.description}
+      {EDITOR_ROUTES_METADATA.map((editorRoute) => {
+        const isV2Route =
+          editorRoute.path === ROUTES.ROUTES_CREATE_V2 ||
+          editorRoute.path === ROUTES.ROUTES_CREATE_V2_ROUTE ||
+          editorRoute.path === ROUTES.ROUTES_CREATE_V2_DEPOT ||
+          editorRoute.path === ROUTES.ROUTES_CREATE_V2_DEPOT_ROUTE;
+
+        return (
+          <Route
+            key={editorRoute.path}
+            path={editorRoute.path}
+            element={
+              <AuthGuard>
+                <RoleGuard
                   roles={editorRoute.roles}
-                />
-              </RoleGuard>
-            </AuthGuard>
-          }
-        />
-      ))}
+                  features={editorRoute.features}
+                >
+                  {isV2Route ? (
+                    <CreateRoutePage />
+                  ) : (
+                    <RoutePlaceholder
+                      title={editorRoute.title}
+                      path={editorRoute.path}
+                      description={editorRoute.description}
+                      roles={editorRoute.roles}
+                    />
+                  )}
+                </RoleGuard>
+              </AuthGuard>
+            }
+          />
+        );
+      })}
 
       {/* Main Protected Application Section */}
       <Route
@@ -143,13 +159,67 @@ export function AppRouter() {
           }
         />
 
+        {/* Regular Routes Page */}
+        <Route
+          path="regular-routes"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "regular-routes")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "regular-routes")?.features || []
+              }
+            >
+              <RegularRoutesPage />
+            </RoleGuard>
+          }
+        />
+
+        {/* STU Users Page - Card Grid Style */}
+        <Route
+          path="users"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "users")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "users")?.features || []
+              }
+            >
+              <UsersPage />
+            </RoleGuard>
+          }
+        />
+
+        {/* Regular Customers Page - Card Grid Style */}
+        <Route
+          path="regular-customers"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "regular-customers")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "regular-customers")?.features || []
+              }
+            >
+              <RegularCustomersPage />
+            </RoleGuard>
+          }
+        />
+
         {/* Other Protected Route Boundaries */}
         {PROTECTED_ROUTES_METADATA.filter(
           (routeMeta) =>
             routeMeta.path !== "organizations" &&
             routeMeta.path !== "regions" &&
             routeMeta.path !== "depots" &&
-            routeMeta.path !== "routes"
+            routeMeta.path !== "routes" &&
+            routeMeta.path !== "regular-routes" &&
+            routeMeta.path !== "users" &&
+            routeMeta.path !== "regular-customers"
         ).map((routeMeta) => (
           <Route
             key={routeMeta.path}

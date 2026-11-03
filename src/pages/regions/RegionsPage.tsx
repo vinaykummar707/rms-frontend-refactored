@@ -507,7 +507,21 @@ export function RegionsPage() {
       )}
 
       {/* Create Region Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog
+        open={isCreateOpen}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setIsCreateOpen(false);
+          }
+        }}
+        disablePointerDismissal={true}
+      >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader className="pb-3 border-b border-border">
             <div className="flex items-center gap-2">
@@ -587,7 +601,18 @@ export function RegionsPage() {
       {/* Edit Region Dialog */}
       <Dialog
         open={Boolean(editingRegion)}
-        onOpenChange={(open) => !open && setEditingRegion(null)}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setEditingRegion(null);
+          }
+        }}
+        disablePointerDismissal={true}
       >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader className="pb-3 border-b border-border">
@@ -667,7 +692,18 @@ export function RegionsPage() {
       {/* Delete Region Confirmation Dialog */}
       <Dialog
         open={Boolean(deletingRegion)}
-        onOpenChange={(open) => !open && setDeletingRegion(null)}
+        onOpenChange={(open, details?: any) => {
+          if (!open) {
+            if (
+              details?.reason === "outside-press" ||
+              details?.reason === "outsidePress"
+            ) {
+              return;
+            }
+            setDeletingRegion(null);
+          }
+        }}
+        disablePointerDismissal={true}
       >
         <DialogContent className="sm:max-w-md p-6">
           <DialogHeader>

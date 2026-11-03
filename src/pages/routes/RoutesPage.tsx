@@ -180,6 +180,25 @@ export function RoutesPage() {
     return sortByLatestCreated(list);
   }, [routesData]);
 
+  const userRegionId = user?.region?.id || (user as any)?.region_id;
+  const userDepotId = user?.depot?.id || (user as any)?.depot_id;
+
+  const visibleRegions = useMemo(() => {
+    if (isRegionOrDepotAdmin && userRegionId) {
+      const filtered = regions.filter((r) => r.id === userRegionId);
+      return filtered.length > 0 ? filtered : regions;
+    }
+    return regions;
+  }, [regions, isRegionOrDepotAdmin, userRegionId]);
+
+  const visibleDepots = useMemo(() => {
+    if (isDepotAdmin && userDepotId) {
+      const filtered = depots.filter((d) => d.id === userDepotId);
+      return filtered.length > 0 ? filtered : depots;
+    }
+    return depots;
+  }, [depots, isDepotAdmin, userDepotId]);
+
   // Select Item Maps for Shadcn Select
   const regionMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -188,8 +207,8 @@ export function RoutesPage() {
   }, [regions]);
 
   const regionItems = useMemo(
-    () => regions.map((r) => ({ label: r.name, value: r.id })),
-    [regions]
+    () => visibleRegions.map((r) => ({ label: r.name, value: r.id })),
+    [visibleRegions]
   );
 
   const depotMap = useMemo(() => {
@@ -199,8 +218,8 @@ export function RoutesPage() {
   }, [depots]);
 
   const depotItems = useMemo(
-    () => depots.map((d) => ({ label: d.name, value: d.id })),
-    [depots]
+    () => visibleDepots.map((d) => ({ label: d.name, value: d.id })),
+    [visibleDepots]
   );
 
   // ─── Auto-Selection Synchronizers ──────────────────────────────────────────
@@ -614,7 +633,7 @@ export function RoutesPage() {
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  {regions.map((reg) => (
+                  {visibleRegions.map((reg) => (
                     <SelectItem key={reg.id} value={reg.id}>
                       {reg.name}
                     </SelectItem>
@@ -645,7 +664,7 @@ export function RoutesPage() {
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  {depots.map((depot) => (
+                  {visibleDepots.map((depot) => (
                     <SelectItem key={depot.id} value={depot.id}>
                       {depot.name}
                     </SelectItem>

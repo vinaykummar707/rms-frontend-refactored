@@ -100,11 +100,11 @@ export function STUOnboardingWizardDialog({
   const [phone, setPhone] = useState("");
   const [logo, setLogo] = useState("");
 
-  // Step 2: Capabilities & Modules
-  const [enablePIS, setEnablePIS] = useState(true);
-  const [enablePAS, setEnablePAS] = useState(true);
+  // Step 2: Capabilities & Modules (none selected by default)
+  const [enablePIS, setEnablePIS] = useState(false);
+  const [enablePAS, setEnablePAS] = useState(false);
   const [enableITMS, setEnableITMS] = useState(false);
-  const [enableV2Routes, setEnableV2Routes] = useState(true);
+  const [enableV2Routes, setEnableV2Routes] = useState(false);
   const [enableV1Routes, setEnableV1Routes] = useState(false);
 
   // Step 3: Administrative Regions
@@ -138,10 +138,10 @@ export function STUOnboardingWizardDialog({
     setEmail("");
     setPhone("");
     setLogo("");
-    setEnablePIS(true);
-    setEnablePAS(true);
+    setEnablePIS(false);
+    setEnablePAS(false);
     setEnableITMS(false);
-    setEnableV2Routes(true);
+    setEnableV2Routes(false);
     setEnableV1Routes(false);
     setRegions([]);
     setNewRegionName("");
@@ -156,6 +156,19 @@ export function STUOnboardingWizardDialog({
     if (isSubmitting) return;
     resetForm();
     onOpenChange(false);
+  };
+
+  const handleOpenChange = (nextOpen: boolean, details?: any) => {
+    if (!nextOpen) {
+      // Prevent closing when user clicks outside the dialog
+      if (
+        details?.reason === "outside-press" ||
+        details?.reason === "outsidePress"
+      ) {
+        return;
+      }
+      handleClose();
+    }
   };
 
   // ----------------------------------------------------
@@ -290,9 +303,9 @@ export function STUOnboardingWizardDialog({
       }
 
       if (!trimmedPhone) {
-        step1Errors.phone = "Corporate contact phone is required.";
-      } else if (trimmedPhone.length < 7 || trimmedPhone.length > 16) {
-        step1Errors.phone = "Please enter a valid contact phone number (7-16 digits).";
+        step1Errors.phone = "Mobile number is required.";
+      } else if (trimmedPhone.length !== 10 || !/^\d{10}$/.test(trimmedPhone)) {
+        step1Errors.phone = "Mobile number must be exactly 10 digits.";
       }
 
       if (trimmedLogo && !/^https?:\/\/.+/i.test(trimmedLogo)) {
@@ -321,7 +334,7 @@ export function STUOnboardingWizardDialog({
 
         const phoneDuplicate = await checkOrganizationPhoneDuplicate(trimmedPhone);
         if (phoneDuplicate) {
-          setErrors({ phone: `An organization with the phone number "${trimmedPhone}" already exists.` });
+          setErrors({ phone: `An organization with the mobile number "${trimmedPhone}" already exists.` });
           return;
         }
       } catch (err: any) {
@@ -482,7 +495,7 @@ export function STUOnboardingWizardDialog({
   ];
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleOpenChange} disablePointerDismissal={true}>
       <DialogContent className="sm:max-w-3xl p-6">
         {/* Dialog Header */}
         <DialogHeader className="pb-3 border-b border-border">
@@ -614,33 +627,42 @@ export function STUOnboardingWizardDialog({
 
               <div className="space-y-1">
                 <Label htmlFor="stu-phone" className="text-xs font-semibold">
-                  Corporate Phone Number *
+                  Mobile Number *
                 </Label>
                 <Input
                   id="stu-phone"
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   value={phone}
                   onChange={(e) => {
-                    setPhone(e.target.value);
+                    const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 10);
+                    setPhone(digitsOnly);
                     clearError("phone");
                   }}
                   onBlur={async () => {
                     const trimmed = phone.trim();
-                    if (trimmed && trimmed.length >= 7 && trimmed.length <= 16) {
-                      try {
-                        const isDup = await checkOrganizationPhoneDuplicate(trimmed);
-                        if (isDup) {
-                          setErrors((prev) => ({
-                            ...prev,
-                            phone: `An organization with the phone number "${trimmed}" already exists.`,
-                          }));
-                        }
-                      } catch (err) {
-                        console.warn("Phone duplicate check error:", err);
+                    if (!trimmed) {
+                      setErrors((prev) => ({ ...prev, phone: "Mobile number is required." }));
+                      return;
+                    }
+                    if (trimmed.length !== 10 || !/^\d{10}$/.test(trimmed)) {
+                      setErrors((prev) => ({ ...prev, phone: "Mobile number must be exactly 10 digits." }));
+                      return;
+                    }
+                    try {
+                      const isDup = await checkOrganizationPhoneDuplicate(trimmed);
+                      if (isDup) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          phone: `An organization with the mobile number "${trimmed}" already exists.`,
+                        }));
                       }
+                    } catch (err) {
+                      console.warn("Phone duplicate check error:", err);
                     }
                   }}
-                  placeholder="+91 80 2222 1111"
+                  placeholder="e.g. 9876543210"
                   aria-invalid={Boolean(errors.phone)}
                 />
                 <FieldErrorText message={errors.phone} />
@@ -1314,14 +1336,15 @@ export function STUOnboardingWizardDialog({
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      tabIndex={-1}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      title={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? (
-                        <EyeOff className="h-3.5 w-3.5" />
+                        <EyeOff className="w-4 h-4" />
                       ) : (
-                        <Eye className="h-3.5 w-3.5" />
+                        <Eye className="w-4 h-4" />
                       )}
                     </button>
                   </div>
@@ -1361,7 +1384,7 @@ export function STUOnboardingWizardDialog({
                     </Badge>
                   </div>
                   <span className="text-[11px] text-muted-foreground block truncate">
-                    Phone: {phone || "—"}
+                    Mobile: {phone || "—"}
                   </span>
                 </div>
 
@@ -1406,23 +1429,31 @@ export function STUOnboardingWizardDialog({
 
         {/* Wizard Footer Controls */}
         <DialogFooter className="flex items-center justify-between sm:justify-between border-t border-border pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={currentStep === 1 ? handleClose : handleBack}
-            disabled={isSubmitting}
-            className="text-xs"
-          >
-            {currentStep === 1 ? (
-              "Cancel"
-            ) : (
-              <>
-                <ChevronLeft className="mr-1 h-3.5 w-3.5" />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleClose}
+              disabled={isSubmitting}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
+            {currentStep > 1 && (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={handleBack}
+                disabled={isSubmitting}
+                className="text-xs font-semibold gap-1"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
                 Back
-              </>
+              </Button>
             )}
-          </Button>
+          </div>
 
           <div className="flex items-center gap-2">
             {currentStep < 5 ? (

@@ -1,5 +1,4 @@
 import type { IStopWithAudio } from "@/shared/types/stop";
-import type { IRouteCreate } from "@/shared/types/route";
 import {
   type SimulationType,
   type FontWeight,
@@ -11,6 +10,7 @@ import {
   type Simulation,
   type StopRouteConfig,
   type StopState,
+  type DisplayConfigPostRequest,
   DEFAULT_SIMULATION_HEIGHTS,
   DEFAULT_SIMULATION_WIDTHS,
 } from "@/shared/types/routeConfigV2";
@@ -202,7 +202,7 @@ export const defaultStopRouteConfig: StopRouteConfig = {
   },
 };
 
-export const defaultDisplayConfigPostRequest: IRouteCreate = {
+export const defaultDisplayConfigPostRequest: DisplayConfigPostRequest = {
   route_number: "",
   source: "",
   destination: "",
@@ -211,11 +211,11 @@ export const defaultDisplayConfigPostRequest: IRouteCreate = {
   route_number_2: "",
   separation: "-",
   is_split_route: false,
-  front: "[]",
-  side: "[]",
-  rear: "[]",
-  internal: "[]",
-  stops: "[]",
+  front: [],
+  side: [],
+  rear: [],
+  internal: [],
+  stops: [],
   version: "2.0",
   depot_id: "",
   organization_id: "",

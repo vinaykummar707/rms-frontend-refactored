@@ -9,8 +9,7 @@ const countActive = async (
   const { count, error } = await supabase
     .from(table)
     .select("id", { count: "exact", head: true })
-    .in(column, values)
-    .eq("deleted", false);
+    .in(column, values);
 
   if (error) {
     console.warn(`Failed to count ${table} for delete warning:`, error);
@@ -113,5 +112,12 @@ export async function confirmDepotDelete(depotId: string): Promise<boolean> {
 export async function confirmUserDelete(authUserId?: string | null): Promise<boolean> {
   const routes = authUserId ? await countActive("routes", "created_by", [authUserId]) : 0;
   return confirmWithImpact("user", [[routes, "route"]]);
+}
+
+export async function getUserDeleteImpactMessage(authUserId?: string | null): Promise<string> {
+  const routes = authUserId ? await countActive("routes", "created_by", [authUserId]) : 0;
+  return routes > 0
+    ? `This user has created ${routes} route${routes === 1 ? "" : "s"}. Deleting this user will affect their created routes. This action cannot be undone.`
+    : `This action cannot be undone. All permissions for this user account will be permanently revoked.`;
 }
 

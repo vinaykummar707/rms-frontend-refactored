@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "cn";
 import { useOrganizationStore } from "@/features/stores/useOrganizationStore";
@@ -64,8 +64,10 @@ export function DepotsPage() {
   const user = useAuthStore((state) => state.user);
   const { selectedOrganization } = useOrganizationStore();
   const { selectedDepot, setSelectedDepot } = useDepotStore();
+  const selectedRegion = useRegionStore(
+    (state) => state.depotsPageRegion ?? state.selectedRegion
+  );
   const setDepotsPageRegion = useRegionStore((state) => state.setDepotsPageRegion);
-  const selectedRegion = useRegionStore((state) => state.depotsPageRegion);
 
   const activeOrgId =
     selectedOrganization?.id || user?.organization_id || user?.organization?.id;
@@ -73,6 +75,8 @@ export function DepotsPage() {
     selectedOrganization?.name || user?.organization?.name || "Organization";
 
   const userRole = user?.role?.name?.toLowerCase() || "";
+  const isRegionOrDepotAdmin =
+    userRole === "region_admin" || userRole === "depot_admin";
   const canManage =
     userRole === "region_admin" ||
     userRole === "organization_admin" ||
@@ -80,7 +84,6 @@ export function DepotsPage() {
 
   // Filter & Search states
   const [searchTerm, setSearchTerm] = useState("");
-  const [regionFilter, setRegionFilter] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Dialog States
@@ -122,7 +125,40 @@ export function DepotsPage() {
     return map;
   }, [regions]);
 
-  // Fetch Depots for this organization & optional region filter
+  const regionItems = useMemo(() => {
+    return regions.map((r) => ({ label: r.name, value: r.id }));
+  }, [regions]);
+
+  // Keep selectedRegion synchronized with available regions
+  useEffect(() => {
+    if (!regions || regions.length === 0) {
+      if (selectedRegion) {
+        setDepotsPageRegion(null);
+      }
+      return;
+    }
+
+    const userRegionId = user?.region?.id || user?.region_id;
+
+    // Restricted users bound to their assigned region
+    if (isRegionOrDepotAdmin && userRegionId) {
+      const assigned =
+        regions.find((r) => r.id === userRegionId) || user?.region || null;
+      if (assigned && selectedRegion?.id !== userRegionId) {
+        setDepotsPageRegion(assigned as any);
+        return;
+      }
+    }
+
+    const isSelectedRegionValid = regions.some(
+      (r) => r.id === selectedRegion?.id
+    );
+    if (!isSelectedRegionValid && regions.length > 0) {
+      setDepotsPageRegion(regions[0]);
+    }
+  }, [regions, selectedRegion, setDepotsPageRegion, isRegionOrDepotAdmin, user]);
+
+  // Fetch Depots for this organization & selected region
   const { useList: useDepotList, useCreate, useUpdate, useDelete } = depotCrud;
   const {
     data: depotData,
@@ -132,10 +168,10 @@ export function DepotsPage() {
   } = useDepotList({
     filters: {
       organization_id: activeOrgId || "",
-      ...(regionFilter !== "all" ? { region_id: regionFilter } : {}),
+      region_id: selectedRegion?.id || "",
     },
     orderBy: { column: "created_at", ascending: false },
-    skip: !activeOrgId,
+    skip: !activeOrgId || !selectedRegion?.id,
   });
 
   const { mutateAsync: createDepot, isPending: isCreating } = useCreate();
@@ -143,9 +179,10 @@ export function DepotsPage() {
   const { mutateAsync: deleteDepot, isPending: isDeleting } = useDelete();
 
   const rawDepots = useMemo(() => {
+    if (!selectedRegion?.id) return [];
     const list = (depotData?.data as IDepot[]) || [];
     return sortByLatestCreated(list);
-  }, [depotData]);
+  }, [depotData, selectedRegion?.id]);
 
   const filteredDepots = useMemo(() => {
     const search = searchTerm.toLowerCase().trim();
@@ -175,9 +212,8 @@ export function DepotsPage() {
     setCreateName("");
     setCreateNameError("");
     setCreateRegionError("");
-    // Default to the active filter region if specific, otherwise first available
-    const initialRegion =
-      regionFilter !== "all" ? regionFilter : regions[0]?.id || "";
+    // Default to the currently selected region or first available
+    const initialRegion = selectedRegion?.id || regions[0]?.id || "";
     setCreateRegionId(initialRegion);
     setIsCreateOpen(true);
   };
@@ -328,13 +364,18 @@ export function DepotsPage() {
     <div className="flex flex-col gap-6 w-full max-w-[1600px] mx-auto">
       {/* Page Header */}
       <div className="flex flex-col gap-1 border-b border-border pb-4">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             Depots
           </h1>
           <Badge variant="secondary" className="font-semibold text-xs px-2 py-0.5">
             {filteredDepots.length} Total
           </Badge>
+          {selectedRegion && (
+            <Badge variant="outline" className="font-semibold text-xs px-2 py-0.5 border-primary/30 text-primary">
+              Region: {selectedRegion.name}
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground">
           Manage operating terminals, fleet sheds, and division allocations for{" "}
@@ -356,28 +397,31 @@ export function DepotsPage() {
             />
           </div>
 
-          {/* Region Filter Dropdown */}
-          {regions.length > 0 && (
+          {/* Region Selector Dropdown */}
+          {!isRegionOrDepotAdmin && regions.length > 0 && (
             <div className="w-full sm:w-[200px] shrink-0">
               <Select
-                value={regionFilter}
+                value={selectedRegion?.id ?? ""}
                 onValueChange={(val) => {
-                  const selected = val ?? "all";
-                  setRegionFilter(selected);
-                  if (selected !== "all") {
-                    const match = regions.find((r) => r.id === selected);
+                  if (val) {
+                    const match = regions.find((r) => r.id === val);
                     if (match) setDepotsPageRegion(match);
                   }
                 }}
+                items={regionItems}
               >
                 <SelectTrigger className="h-9 text-xs w-full">
                   <div className="flex items-center gap-1.5 truncate">
                     <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <SelectValue  placeholder="All Regions">{selectedRegion?.name}</SelectValue>
+                    <SelectValue placeholder="Select region...">
+                      {(val: string | null) => {
+                        if (!val) return null;
+                        return regionMap.get(val) || val;
+                      }}
+                    </SelectValue>
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Regions ({regions.length})</SelectItem>
                   {regions.map((reg) => (
                     <SelectItem key={reg.id} value={reg.id}>
                       {reg.name}
@@ -496,32 +540,20 @@ export function DepotsPage() {
           </div>
           <h3 className="text-base font-semibold text-foreground">No depots found</h3>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-            {searchTerm || regionFilter !== "all"
-              ? "No depots match your search query or region filter."
-              : "No operating depots have been configured for this organization yet."}
+            {searchTerm
+              ? `No depots match "${searchTerm}" in ${selectedRegion?.name || "this region"}.`
+              : `No operating depots have been configured for ${selectedRegion?.name || "this region"} yet.`}
           </p>
-          {searchTerm || regionFilter !== "all" ? (
+          {searchTerm ? (
             <div className="flex items-center gap-2 mt-4">
-              {searchTerm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSearchTerm("")}
-                  className="text-xs"
-                >
-                  Clear Search
-                </Button>
-              )}
-              {regionFilter !== "all" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRegionFilter("all")}
-                  className="text-xs"
-                >
-                  Reset Filter
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSearchTerm("")}
+                className="text-xs"
+              >
+                Clear Search
+              </Button>
             </div>
           ) : (
             canManage && (
@@ -531,7 +563,7 @@ export function DepotsPage() {
                 className="mt-4 text-xs font-semibold gap-1.5 shadow-xs"
               >
                 <Plus className="h-3.5 w-3.5" />
-                <span>Create First Depot</span>
+                <span>Create Depot</span>
               </Button>
             )
           )}
@@ -647,6 +679,7 @@ export function DepotsPage() {
                   setCreateRegionId(val ?? "");
                   if (createRegionError) setCreateRegionError("");
                 }}
+                items={regionItems}
               >
                 <SelectTrigger
                   className={cn(
@@ -654,7 +687,12 @@ export function DepotsPage() {
                     createRegionError && "border-destructive focus-visible:ring-destructive/20"
                   )}
                 >
-                  <SelectValue placeholder="Select parent region..." />
+                  <SelectValue placeholder="Select parent region...">
+                    {(val: string | null) => {
+                      if (!val) return null;
+                      return regionMap.get(val) || val;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {regions.map((reg) => (
@@ -764,6 +802,7 @@ export function DepotsPage() {
                     setEditRegionId(val ?? "");
                     if (editRegionError) setEditRegionError("");
                   }}
+                  items={regionItems}
                 >
                   <SelectTrigger
                     className={cn(
@@ -771,7 +810,12 @@ export function DepotsPage() {
                       editRegionError && "border-destructive focus-visible:ring-destructive/20"
                     )}
                   >
-                    <SelectValue placeholder="Select parent region..." />
+                    <SelectValue placeholder="Select parent region...">
+                      {(val: string | null) => {
+                        if (!val) return null;
+                        return regionMap.get(val) || val;
+                      }}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {regions.map((reg) => (

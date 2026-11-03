@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { OrganizationsPage } from "@/pages/organizations/OrganizationsPage";
 import { RegionsPage } from "@/pages/regions/RegionsPage";
 import { DepotsPage } from "@/pages/depots/DepotsPage";
+import { RoutesPage } from "@/pages/routes/RoutesPage";
 import { RoutePlaceholder } from "./RoutePlaceholder";
 import { ROUTES } from "@/navigation/routes";
 import {
@@ -125,12 +126,30 @@ export function AppRouter() {
           }
         />
 
+        {/* Routes Page */}
+        <Route
+          path="routes"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "routes")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "routes")?.features || []
+              }
+            >
+              <RoutesPage />
+            </RoleGuard>
+          }
+        />
+
         {/* Other Protected Route Boundaries */}
         {PROTECTED_ROUTES_METADATA.filter(
           (routeMeta) =>
             routeMeta.path !== "organizations" &&
             routeMeta.path !== "regions" &&
-            routeMeta.path !== "depots"
+            routeMeta.path !== "depots" &&
+            routeMeta.path !== "routes"
         ).map((routeMeta) => (
           <Route
             key={routeMeta.path}

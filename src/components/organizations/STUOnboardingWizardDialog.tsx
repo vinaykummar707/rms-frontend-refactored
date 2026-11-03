@@ -1254,7 +1254,7 @@ export function STUOnboardingWizardDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label htmlFor="admin-email-input" className="text-xs font-semibold">
-                    Administrator Login Email *
+                    Administrator Email *
                   </Label>
                   <Input
                     id="admin-email-input"
@@ -1296,7 +1296,7 @@ export function STUOnboardingWizardDialog({
 
                 <div className="space-y-1">
                   <Label htmlFor="admin-pwd-input" className="text-xs font-semibold">
-                    Initial Password *
+                Password *
                   </Label>
                   <div className="relative">
                     <Input

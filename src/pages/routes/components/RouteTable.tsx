@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "cn";
 import {
   Table,
@@ -13,17 +13,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDate } from "@/shared/utils/dateUtils";
 import type { IRoute } from "@/shared/types/route";
 import {
-  MoreHorizontal,
   Pencil,
   Copy,
   ArrowLeftRight,
@@ -33,7 +37,52 @@ import {
   Tag,
   Layers,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
+
+const ActionTooltip: React.FC<{
+  content: React.ReactNode;
+  children: React.ReactElement;
+  side?: "top" | "bottom" | "left" | "right";
+  align?: "start" | "center" | "end";
+}> = ({ content, children, side = "top", align = "center" }) => {
+  if (!content) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent
+        side={side}
+        align={align}
+        className="text-[11px] font-medium py-1 px-2 z-50 shadow-sm"
+      >
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  );
+};
+
+const PAGE_SIZE_OPTIONS = [
+  { label: "10", value: "10" },
+  { label: "20", value: "20" },
+  { label: "50", value: "50" },
+  { label: "100", value: "100" },
+];
+
+function getPageNumbers(currentPage: number, totalPages: number): (number | "ellipsis")[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, "ellipsis", totalPages];
+  }
+  if (currentPage >= totalPages - 3) {
+    return [1, "ellipsis", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, "ellipsis", currentPage - 1, currentPage, currentPage + 1, "ellipsis", totalPages];
+}
 
 export interface RouteTableProps {
   routes: IRoute[];
@@ -48,6 +97,8 @@ export interface RouteTableProps {
   isGuest?: boolean;
   isLoading?: boolean;
   className?: string;
+  initialPageSize?: number;
+  showPagination?: boolean;
 }
 
 export function RouteTable({
@@ -63,16 +114,52 @@ export function RouteTable({
   isGuest = false,
   isLoading = false,
   className,
+  initialPageSize = 10,
+  showPagination = true,
 }: RouteTableProps) {
+  const [pageSize, setPageSize] = useState<number>(initialPageSize);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
   const selectedSet = useMemo(
     () => new Set(selectedRouteIds),
     [selectedRouteIds]
   );
 
+  const totalPages = Math.max(1, Math.ceil(routes.length / pageSize));
+
+  // Reset page when totalPages shrinks below currentPage
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+
+  // Jump to page of highlighted route if present
+  useEffect(() => {
+    if (!highlightedRouteId || routes.length === 0) return;
+    const index = routes.findIndex((r) => r.id === highlightedRouteId);
+    if (index !== -1) {
+      const targetPage = Math.floor(index / pageSize) + 1;
+      if (targetPage !== currentPage) {
+        setCurrentPage(targetPage);
+      }
+    }
+  }, [highlightedRouteId, routes, pageSize]);
+
   const allSelected =
     routes.length > 0 && selectedRouteIds.length === routes.length;
   const someSelected =
     selectedRouteIds.length > 0 && selectedRouteIds.length < routes.length;
+
+  const paginatedRoutes = useMemo(() => {
+    if (!showPagination) return routes;
+    const start = (currentPage - 1) * pageSize;
+    return routes.slice(start, start + pageSize);
+  }, [routes, currentPage, pageSize, showPagination]);
+
+  const pageNumbers = useMemo(() => {
+    return getPageNumbers(currentPage, totalPages);
+  }, [currentPage, totalPages]);
 
   return (
     <div
@@ -132,8 +219,10 @@ export function RouteTable({
                 Created By
               </TableHead>
 
-              {/* Actions */}
-              <TableHead className="w-12 pr-3.5 text-right font-semibold text-xs text-foreground" />
+              {/* Actions Column */}
+              <TableHead className="w-[148px] min-w-[148px] pr-4 text-right font-semibold text-xs text-foreground">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
 
@@ -169,8 +258,13 @@ export function RouteTable({
                       <Skeleton className="h-4 w-24" />
                     </div>
                   </TableCell>
-                  <TableCell className="w-12 pr-3.5 text-right">
-                    <Skeleton className="h-7 w-7 rounded-md ml-auto" />
+                  <TableCell className="w-[148px] min-w-[148px] pr-4 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <Skeleton className="h-7 w-7 rounded-lg" />
+                      <Skeleton className="h-7 w-7 rounded-lg" />
+                      <Skeleton className="h-7 w-7 rounded-lg" />
+                      <Skeleton className="h-7 w-7 rounded-lg" />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -184,7 +278,7 @@ export function RouteTable({
                 </TableCell>
               </TableRow>
             ) : (
-              routes.map((route) => {
+              paginatedRoutes.map((route) => {
                 const isSelected = selectedSet.has(route.id);
                 const isHighlighted = highlightedRouteId === route.id;
                 const email = route.created_by_user?.email || "Unknown";
@@ -323,58 +417,57 @@ export function RouteTable({
                       </div>
                     </TableCell>
 
-                    {/* Actions Menu */}
-                    <TableCell className="w-12 pr-3.5 text-right py-3">
+                    {/* Actions Column */}
+                    <TableCell className="w-[148px] min-w-[148px] pr-4 text-right py-2">
                       {!isGuest && (
-                        <div className="flex justify-end">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                  aria-label="Route actions"
-                                />
-                              }
+                        <div className="flex items-center justify-end gap-1.5">
+                          <ActionTooltip content="Edit Route" side="top">
+                            <Button
+                              variant="secondary"
+                              size="icon-sm"
+                              onClick={() => onEdit?.(route.id)}
+                              className="h-7 w-7 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-500/15 shadow-2xs"
+                              aria-label={`Edit route ${route.route_number}`}
                             >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              className="w-48 p-1 space-y-0.5"
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </ActionTooltip>
+
+                          <ActionTooltip content="Duplicate Route" side="top">
+                            <Button
+                              variant="secondary"
+                              size="icon-sm"
+                              onClick={() => onDuplicate?.(route.id, "D")}
+                              className="h-7 w-7 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/15 shadow-2xs"
+                              aria-label={`Duplicate route ${route.route_number}`}
                             >
-                              <DropdownMenuItem
-                                onClick={() => onEdit?.(route.id)}
-                                className="text-xs font-medium cursor-pointer gap-2"
-                              >
-                                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span>Edit Route</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => onDuplicate?.(route.id, "D")}
-                                className="text-xs font-medium cursor-pointer gap-2"
-                              >
-                                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span>Duplicate Route</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => onReturn?.(route.id, "(Return)")}
-                                className="text-xs font-medium cursor-pointer gap-2"
-                              >
-                                <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span>Create Return Route</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => onDelete?.(route)}
-                                className="text-xs font-medium text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer gap-2"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                <span>Delete Route</span>
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          </ActionTooltip>
+
+                          <ActionTooltip content="Create Return Route" side="top">
+                            <Button
+                              variant="secondary"
+                              size="icon-sm"
+                              onClick={() => onReturn?.(route.id, "(Return)")}
+                              className="h-7 w-7 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-500/15 shadow-2xs"
+                              aria-label={`Create return route for ${route.route_number}`}
+                            >
+                              <ArrowLeftRight className="h-3.5 w-3.5" />
+                            </Button>
+                          </ActionTooltip>
+
+                          <ActionTooltip content="Delete Route" side="top">
+                            <Button
+                              variant="destructive"
+                              size="icon-sm"
+                              onClick={() => onDelete?.(route)}
+                              className="h-7 w-7 shadow-2xs"
+                              aria-label={`Delete route ${route.route_number}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </ActionTooltip>
                         </div>
                       )}
                     </TableCell>
@@ -385,6 +478,144 @@ export function RouteTable({
           </TableBody>
         </Table>
       </div>
+
+      {/* Pagination Bar */}
+      {showPagination && !isLoading && routes.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground select-none">
+          {/* Left side: Results Count & Page Size Selector */}
+          <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-start">
+            <span>
+              Showing{" "}
+              <strong className="font-semibold text-foreground">
+                {(currentPage - 1) * pageSize + 1}
+              </strong>{" "}
+              to{" "}
+              <strong className="font-semibold text-foreground">
+                {Math.min(currentPage * pageSize, routes.length)}
+              </strong>{" "}
+              of{" "}
+              <strong className="font-semibold text-foreground">
+                {routes.length}
+              </strong>{" "}
+              {routes.length === 1 ? "route" : "routes"}
+            </span>
+
+            {selectedRouteIds.length > 0 && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/10 text-primary border border-primary/20">
+                {selectedRouteIds.length} selected
+              </span>
+            )}
+
+            <div className="flex items-center gap-1.5 ml-0 sm:ml-2">
+              <span className="text-[11px] whitespace-nowrap">Rows per page:</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => {
+                  if (val) {
+                    setPageSize(Number(val));
+                    setCurrentPage(1);
+                  }
+                }}
+                items={PAGE_SIZE_OPTIONS}
+              >
+                <SelectTrigger size="sm" className="h-7 w-[68px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Right side: Navigation Controls */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              title="First Page"
+              aria-label="Go to first page"
+              className="h-7 w-7"
+            >
+              <ChevronsLeft className="h-3.5 w-3.5" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              title="Previous Page"
+              aria-label="Go to previous page"
+              className="h-7 w-7"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </Button>
+
+            {/* Page Numbers */}
+            <div className="flex items-center gap-1 mx-1">
+              {pageNumbers.map((p, idx) => {
+                if (p === "ellipsis") {
+                  return (
+                    <span
+                      key={`ellipsis-${idx}`}
+                      className="px-1 text-xs text-muted-foreground"
+                    >
+                      …
+                    </span>
+                  );
+                }
+                const isActive = p === currentPage;
+                return (
+                  <Button
+                    key={p}
+                    variant={isActive ? "default" : "outline"}
+                    size="icon-sm"
+                    onClick={() => setCurrentPage(p)}
+                    className={cn(
+                      "h-7 w-7 text-xs font-medium",
+                      isActive && "pointer-events-none shadow-xs font-semibold"
+                    )}
+                    aria-label={`Page ${p}`}
+                    aria-current={isActive ? "page" : undefined}
+                  >
+                    {p}
+                  </Button>
+                );
+              })}
+            </div>
+
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              title="Next Page"
+              aria-label="Go to next page"
+              className="h-7 w-7"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              title="Last Page"
+              aria-label="Go to last page"
+              className="h-7 w-7"
+            >
+              <ChevronsRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

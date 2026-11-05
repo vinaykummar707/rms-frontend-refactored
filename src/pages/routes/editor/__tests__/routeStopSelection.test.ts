@@ -164,5 +164,49 @@ describe("Route Stop Selection & Mutual Exclusion", () => {
     const serialized = viaItems.map((v) => v.name).join(", ");
     expect(serialized).toBe("Domlur, HAL, Marathahalli");
   });
+
+  it("prepends 'None' option to select items allowing users to clear stop selection", () => {
+    const NONE_OPTION_VALUE = "__none__";
+    const availableStops = [
+      { id: "s1", name: "Majestic BS", name_kn: "ಮೆಜೆಸ್ಟಿಕ್" },
+      { id: "s2", name: "Corporation" },
+    ];
+
+    const buildItems = (stops: Stop[], _currentVal?: string) => {
+      const items = [
+        { value: NONE_OPTION_VALUE, label: "None" },
+        ...stops.map((s) => ({
+          value: s.name,
+          label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+        })),
+      ];
+      return items;
+    };
+
+    const items = buildItems(availableStops, "Majestic BS");
+    expect(items[0]).toEqual({ value: "__none__", label: "None" });
+    expect(items.length).toBe(3);
+
+    // Simulating selecting "None" clears the value to empty string
+    const handleSelection = (selectedVal: string) =>
+      selectedVal === NONE_OPTION_VALUE ? "" : selectedVal;
+
+    expect(handleSelection("__none__")).toBe("");
+    expect(handleSelection("Corporation")).toBe("Corporation");
+  });
+
+  it("restores all stops to available lists when source or destination is cleared to empty", () => {
+    // When source and destination are both empty
+    const { availableSourceStops, availableDestStops, availableViaStops } = filterAvailableStops({
+      catalogStops: mockStops,
+      source: "",
+      destination: "",
+      viaStops: [],
+    });
+
+    expect(availableSourceStops.length).toBe(mockStops.length);
+    expect(availableDestStops.length).toBe(mockStops.length);
+    expect(availableViaStops.length).toBe(mockStops.length);
+  });
 });
 

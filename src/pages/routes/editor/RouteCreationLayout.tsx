@@ -746,13 +746,18 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       });
     }, [depotStops, sourceNorm, destNorm, viaNamesSet]);
 
+    const NONE_OPTION_VALUE = "__none__";
+
     const sourceSelectItems = useMemo(() => {
-      const items = availableSourceStops.map((s) => ({
-        value: s.name,
-        label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
-      }));
+      const items: { value: string; label: string }[] = [
+        { value: NONE_OPTION_VALUE, label: "None" },
+        ...availableSourceStops.map((s) => ({
+          value: s.name,
+          label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+        })),
+      ];
       if (sourceVal && !items.some((i) => i.value.toLowerCase() === sourceNorm)) {
-        items.unshift({
+        items.splice(1, 0, {
           value: sourceVal,
           label: `${sourceVal} (Custom)`,
         });
@@ -761,12 +766,15 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     }, [availableSourceStops, sourceVal, sourceNorm]);
 
     const destSelectItems = useMemo(() => {
-      const items = availableDestStops.map((s) => ({
-        value: s.name,
-        label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
-      }));
+      const items: { value: string; label: string }[] = [
+        { value: NONE_OPTION_VALUE, label: "None" },
+        ...availableDestStops.map((s) => ({
+          value: s.name,
+          label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+        })),
+      ];
       if (destVal && !items.some((i) => i.value.toLowerCase() === destNorm)) {
-        items.unshift({
+        items.splice(1, 0, {
           value: destVal,
           label: `${destVal} (Custom)`,
         });
@@ -2106,31 +2114,47 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
                       Source (Origin)
                     </label>
-                    {canSelectStops && depotStops.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSourceInputMode((prev) => (prev === "select" ? "manual" : "select"))
-                        }
-                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        {sourceInputMode === "select" ? (
-                          <>
-                            <Pencil className="h-2.5 w-2.5" /> Custom
-                          </>
-                        ) : (
-                          <>
-                            <ListFilter className="h-2.5 w-2.5" /> Catalog
-                          </>
-                        )}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {sourceVal && (
+                        <button
+                          type="button"
+                          onClick={() => setValue("source", "", { shouldDirty: true })}
+                          className="text-[10px] font-medium text-muted-foreground hover:text-rose-500 flex items-center gap-0.5 cursor-pointer transition-colors"
+                          title="Clear stop selection"
+                        >
+                          <X className="h-2.5 w-2.5" /> Clear
+                        </button>
+                      )}
+                      {canSelectStops && depotStops.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSourceInputMode((prev) => (prev === "select" ? "manual" : "select"))
+                          }
+                          className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          {sourceInputMode === "select" ? (
+                            <>
+                              <Pencil className="h-2.5 w-2.5" /> Custom
+                            </>
+                          ) : (
+                            <>
+                              <ListFilter className="h-2.5 w-2.5" /> Catalog
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {sourceInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
                     <Select
                       value={sourceVal}
                       onValueChange={(val) => {
-                        if (val) setValue("source", val, { shouldDirty: true });
+                        if (val === NONE_OPTION_VALUE || !val) {
+                          setValue("source", "", { shouldDirty: true });
+                        } else {
+                          setValue("source", val, { shouldDirty: true });
+                        }
                       }}
                       items={sourceSelectItems}
                     >
@@ -2139,8 +2163,21 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       </SelectTrigger>
                       <SelectContent>
                         {sourceSelectItems.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                            {opt.label}
+                          <SelectItem
+                            key={opt.value}
+                            value={opt.value}
+                            className={cn(
+                              "text-xs",
+                              opt.value === NONE_OPTION_VALUE && "text-muted-foreground font-medium italic"
+                            )}
+                          >
+                            {opt.value === NONE_OPTION_VALUE ? (
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <X className="h-3 w-3" /> None
+                              </span>
+                            ) : (
+                              opt.label
+                            )}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -2161,31 +2198,47 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
                       Destination (Terminus)
                     </label>
-                    {canSelectStops && depotStops.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setDestInputMode((prev) => (prev === "select" ? "manual" : "select"))
-                        }
-                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        {destInputMode === "select" ? (
-                          <>
-                            <Pencil className="h-2.5 w-2.5" /> Custom
-                          </>
-                        ) : (
-                          <>
-                            <ListFilter className="h-2.5 w-2.5" /> Catalog
-                          </>
-                        )}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {destVal && (
+                        <button
+                          type="button"
+                          onClick={() => setValue("destination", "", { shouldDirty: true })}
+                          className="text-[10px] font-medium text-muted-foreground hover:text-rose-500 flex items-center gap-0.5 cursor-pointer transition-colors"
+                          title="Clear stop selection"
+                        >
+                          <X className="h-2.5 w-2.5" /> Clear
+                        </button>
+                      )}
+                      {canSelectStops && depotStops.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDestInputMode((prev) => (prev === "select" ? "manual" : "select"))
+                          }
+                          className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          {destInputMode === "select" ? (
+                            <>
+                              <Pencil className="h-2.5 w-2.5" /> Custom
+                            </>
+                          ) : (
+                            <>
+                              <ListFilter className="h-2.5 w-2.5" /> Catalog
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {destInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
                     <Select
                       value={destVal}
                       onValueChange={(val) => {
-                        if (val) setValue("destination", val, { shouldDirty: true });
+                        if (val === NONE_OPTION_VALUE || !val) {
+                          setValue("destination", "", { shouldDirty: true });
+                        } else {
+                          setValue("destination", val, { shouldDirty: true });
+                        }
                       }}
                       items={destSelectItems}
                     >
@@ -2194,8 +2247,21 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       </SelectTrigger>
                       <SelectContent>
                         {destSelectItems.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                            {opt.label}
+                          <SelectItem
+                            key={opt.value}
+                            value={opt.value}
+                            className={cn(
+                              "text-xs",
+                              opt.value === NONE_OPTION_VALUE && "text-muted-foreground font-medium italic"
+                            )}
+                          >
+                            {opt.value === NONE_OPTION_VALUE ? (
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <X className="h-3 w-3" /> None
+                              </span>
+                            ) : (
+                              opt.label
+                            )}
                           </SelectItem>
                         ))}
                       </SelectContent>

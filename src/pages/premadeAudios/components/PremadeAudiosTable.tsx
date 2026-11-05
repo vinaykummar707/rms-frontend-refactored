@@ -210,7 +210,7 @@ export function PremadeAudiosTable({
                         </span>
                         {audio.announcement_text && (
                           <p
-                            className="text-[11px] text-muted-foreground line-clamp-2 italic bg-muted/40 px-1.5 py-0.5 rounded border border-border/40"
+                            className="text-[11px] w-[260px] text-ellipsis text-muted-foreground line-clamp-2 italic bg-muted/40 px-1.5 py-0.5 rounded border border-border/40"
                             title={audio.announcement_text}
                           >
                             "{audio.announcement_text}"

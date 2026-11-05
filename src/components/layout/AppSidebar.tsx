@@ -27,6 +27,7 @@ import {
   Navigation,
   Type,
   Volume2,
+  Radio,
 } from "lucide-react";
 
 interface NavItem {
@@ -133,6 +134,12 @@ export function AppSidebar() {
       title: "Premade Audios",
       url: "/home/premade-audios",
       icon: Volume2,
+      roles: [ROLES.MASTER],
+    },
+    {
+      title: "Stage Audios",
+      url: "/home/stage-audios",
+      icon: Radio,
       roles: [ROLES.MASTER],
     },
     {

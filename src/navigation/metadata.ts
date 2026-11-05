@@ -165,6 +165,15 @@ export const PROTECTED_ROUTES_METADATA: readonly RouteMetadata[] = [
     requiresAuth: true,
     isNavMenu: true,
   },
+  {
+    path: "stage-audios",
+    title: "Stage Audios",
+    description: "Transit waypoint stage announcement matrix (current, next, arriving stop) across languages",
+    roles: [ROLES.MASTER],
+    features: [],
+    requiresAuth: true,
+    isNavMenu: true,
+  },
 ] as const;
 
 export const EDITOR_ROUTES_METADATA: readonly RouteMetadata[] = [

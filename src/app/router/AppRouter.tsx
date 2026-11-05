@@ -13,6 +13,7 @@ import { UsersPage } from "@/pages/users/UsersPage";
 import { RegularCustomersPage } from "@/pages/regularCustomers/RegularCustomersPage";
 import { StopsPage } from "@/pages/stops";
 import { PremadeAudiosPage } from "@/pages/premadeAudios/PremadeAudiosPage";
+import { StageAudiosPage } from "@/pages/stageAudios/StageAudiosPage";
 import { CreateRoutePage } from "@/pages/routes/CreateRoutePage";
 import { RoutePlaceholder } from "./RoutePlaceholder";
 import { ROUTES } from "@/navigation/routes";
@@ -246,6 +247,23 @@ export function AppRouter() {
           }
         />
 
+        {/* Stage Audios Page */}
+        <Route
+          path="stage-audios"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "stage-audios")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "stage-audios")?.features || []
+              }
+            >
+              <StageAudiosPage />
+            </RoleGuard>
+          }
+        />
+
         {/* Other Protected Route Boundaries */}
         {PROTECTED_ROUTES_METADATA.filter(
           (routeMeta) =>
@@ -257,7 +275,8 @@ export function AppRouter() {
             routeMeta.path !== "users" &&
             routeMeta.path !== "regular-customers" &&
             routeMeta.path !== "stops" &&
-            routeMeta.path !== "premade-audios"
+            routeMeta.path !== "premade-audios" &&
+            routeMeta.path !== "stage-audios"
         ).map((routeMeta) => (
           <Route
             key={routeMeta.path}

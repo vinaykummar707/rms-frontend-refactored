@@ -3,6 +3,7 @@ import { supabase } from "./client";
 export const STORAGE_BUCKETS = {
   AUDIOS: "audios",
   STOPS: "stops",
+  STAGE_AUDIOS: "stage-audios",
 } as const;
 
 export interface UploadResult {

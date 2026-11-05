@@ -29,6 +29,10 @@ import { StopAudioDialog } from "./components/StopAudioDialog";
 import { DeleteSelectedStopsDialog } from "./components/DeleteSelectedStopsDialog";
 import { DeleteStopDialog } from "./components/DeleteStopDialog";
 import {
+  exportAudiosToZip,
+  type IExportAudioItem,
+} from "@/shared/utils/audioExport";
+import {
   MapPin,
   Plus,
   RefreshCw,
@@ -39,6 +43,8 @@ import {
   Map as MapIcon,
   X,
   Search,
+  Download,
+  Loader2,
 } from "lucide-react";
 
 export function StopsPage() {
@@ -77,6 +83,8 @@ export function StopsPage() {
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExportingAudios, setIsExportingAudios] = useState(false);
+  const [exportAudiosProgress, setExportAudiosProgress] = useState("");
 
   // ─── Data Fetching ──────────────────────────────────────────────────────────
 
@@ -324,6 +332,63 @@ export function StopsPage() {
     }
   };
 
+  const stopsWithAudioCount = useMemo(() => {
+    return stops.filter((s) => {
+      const audio = Array.isArray(s.stop_audios) ? s.stop_audios[0] : s.stop_audios;
+      return Boolean(audio && audio.url);
+    }).length;
+  }, [stops]);
+
+  const handleExportStopAudios = async () => {
+    const stopsWithAudio = stops.filter((s) => {
+      const audio = Array.isArray(s.stop_audios) ? s.stop_audios[0] : s.stop_audios;
+      return Boolean(audio && audio.url);
+    });
+
+    if (stopsWithAudio.length === 0) {
+      notify.info("No stop audio recordings available to export.");
+      return;
+    }
+
+    try {
+      setIsExportingAudios(true);
+      setExportAudiosProgress("0%");
+
+      const items: IExportAudioItem[] = stopsWithAudio.map((s) => {
+        const audio = Array.isArray(s.stop_audios) ? s.stop_audios[0] : s.stop_audios!;
+        const ext = audio.file_name?.split(".").pop() || "mp3";
+        const cleanStopName = s.name
+          .trim()
+          .toLowerCase()
+          .replace(/[^\w\s-]/g, "")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-");
+        return {
+          url: audio.url,
+          fileName: `${cleanStopName || "stop"}.${ext}`,
+        };
+      });
+
+      const depotSlug = selectedDepot?.name
+        ? `${selectedDepot.name.trim().toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}-`
+        : "";
+
+      const result = await exportAudiosToZip(
+        items,
+        `${depotSlug}stop-audios-${Date.now()}.zip`,
+        (p) => setExportAudiosProgress(`${p.percent}%`)
+      );
+
+      notify.success(`Exported ${result.count} stop audio files to ${result.zipName}`);
+    } catch (err: any) {
+      console.error("[StopsPage] Export audios error:", err);
+      notify.error(err.message || "Failed to export stop audios.");
+    } finally {
+      setIsExportingAudios(false);
+      setExportAudiosProgress("");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -450,6 +515,32 @@ export function StopsPage() {
 
         {/* Right Side: Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Export Audios Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportStopAudios}
+            disabled={isExportingAudios || isRefreshing || stopsWithAudioCount === 0}
+            className="h-9 gap-1.5 text-xs font-semibold shadow-2xs"
+            title={
+              stopsWithAudioCount === 0
+                ? "No stop audio recordings available to export"
+                : "Download all stop audio files for this depot as a ZIP archive"
+            }
+          >
+            {isExportingAudios ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Exporting ({exportAudiosProgress})...</span>
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" />
+                <span>Export Audios ({stopsWithAudioCount})</span>
+              </>
+            )}
+          </Button>
+
           {/* Refresh Button */}
           <Button
             variant="outline"

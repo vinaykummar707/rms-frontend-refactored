@@ -11,12 +11,19 @@ import { Badge } from "@/components/ui/badge";
 import { notify } from "@/core/notifications/notificationService";
 import type { IPremadeAudio } from "@/shared/types/premadeAudio";
 import {
+  exportAudiosToZip,
+  type IExportAudioItem,
+} from "@/shared/utils/audioExport";
+import { slugifyText } from "@/features/premadeAudios/services/premadeAudioService";
+import {
   Volume2,
   RefreshCw,
   Search,
   X,
   ShieldAlert,
   Sparkles,
+  Download,
+  Loader2,
 } from "lucide-react";
 
 export function PremadeAudiosPage() {
@@ -41,6 +48,8 @@ export function PremadeAudiosPage() {
   const [editingAudio, setEditingAudio] = useState<IPremadeAudio | null>(null);
   const [deletingAudio, setDeletingAudio] = useState<IPremadeAudio | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
 
   // Super Admin security check
   if (!isSuper) {
@@ -110,6 +119,43 @@ export function PremadeAudiosPage() {
     }
   };
 
+  const handleExportAudios = async () => {
+    if (filteredAudios.length === 0) {
+      notify.info("No premade audio records available to export.");
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      setExportProgress("0%");
+
+      const items: IExportAudioItem[] = filteredAudios
+        .filter((a) => Boolean(a.url))
+        .map((a) => {
+          const ext = a.file_name?.split(".").pop() || "mp3";
+          const fallback = slugifyText(a.reference_text || "premade-audio");
+          return {
+            url: a.url,
+            fileName: a.file_name || `${fallback}.${ext}`,
+          };
+        });
+
+      const result = await exportAudiosToZip(
+        items,
+        `premade-audios-${Date.now()}.zip`,
+        (p) => setExportProgress(`${p.percent}%`)
+      );
+
+      notify.success(`Exported ${result.count} premade audio files to ${result.zipName}`);
+    } catch (err: any) {
+      console.error("[PremadeAudiosPage] Export error:", err);
+      notify.error(err.message || "Failed to export premade audios.");
+    } finally {
+      setIsExporting(false);
+      setExportProgress("");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -156,6 +202,28 @@ export function PremadeAudiosPage() {
 
         {/* Right Action Buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleExportAudios}
+            disabled={isExporting || isLoading || filteredAudios.length === 0}
+            className="h-9 text-xs font-semibold gap-1.5 shadow-2xs"
+            title="Download all premade audios as a ZIP archive"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Exporting ({exportProgress})...</span>
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" />
+                <span>Export Audios</span>
+              </>
+            )}
+          </Button>
+
           <Button
             type="button"
             variant="outline"

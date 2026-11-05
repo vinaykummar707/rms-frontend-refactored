@@ -109,22 +109,24 @@ app.post("/api/tts/synthesize", async (req: Request, res: Response) => {
       `[TTS] Synthesizing "${normalizedText}" using voice "${chosenVoice}" (Rate: ${rate})...`
     );
 
-    // Write text to a temporary UTF-8 file to prevent Windows command line ANSI encoding corruption
+    // Write text to a temporary UTF-8 file to prevent command line encoding corruption
     const tempFileName = `edge-tts-${crypto.randomUUID()}.txt`;
     tempFilePath = path.join(os.tmpdir(), tempFileName);
     fs.writeFileSync(tempFilePath, normalizedText, "utf8");
+
+    // Cleanly pass rate, volume, and pitch using key=value syntax so Python's argparse never treats negative rates as flags
+    const safeRate = rate && typeof rate === "string" && rate.trim() ? rate.trim() : DEFAULT_RATE;
+    const safeVolume = volume && typeof volume === "string" && volume.trim() ? volume.trim() : "+0%";
+    const safePitch = pitch && typeof pitch === "string" && pitch.trim() ? pitch.trim() : "+0Hz";
 
     const args = [
       "--file",
       tempFilePath,
       "--voice",
       chosenVoice,
-      "--rate",
-      rate,
-      "--volume",
-      volume,
-      "--pitch",
-      pitch,
+      `--rate=${safeRate}`,
+      `--volume=${safeVolume}`,
+      `--pitch=${safePitch}`,
     ];
 
     const child = spawn("edge-tts", args);

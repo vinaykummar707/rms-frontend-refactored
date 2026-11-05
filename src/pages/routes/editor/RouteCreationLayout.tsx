@@ -3183,7 +3183,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           /* ------------------------------------------------------- */
           /* STOP ANNOUNCEMENT SIMULATOR PANEL (Tab.STOPS)           */
           /* ------------------------------------------------------- */
-          <div className="flex flex-col flex-none w-[380px] lg:w-[440px] xl:w-[480px] border-r border-border bg-card overflow-hidden">
+          <div className="flex flex-col flex-none w-[420px] lg:w-[460px] xl:w-[500px] border-r border-border bg-card overflow-hidden">
             {/* Simulator Header */}
             <div className="flex h-11 flex-none items-center justify-between border-b border-border px-4 bg-card">
               <div className="flex items-center gap-2">
@@ -3207,81 +3207,107 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               )}
             </div>
 
-            {/* Simulator Body */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-             
+            {/* Simulator Body (Compact, no-scroll arrangement) */}
+            <div className="flex-1 p-3.5 space-y-3 overflow-y-auto">
+              {/* Row 1: Route Stop & Announcement Language */}
+              <div className="grid grid-cols-12 gap-2.5 items-end">
+                {/* 1. Stop Selector */}
+                <div className="col-span-7 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground">
+                      Route Stop
+                    </label>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {effectiveSimStops.length} stops
+                    </span>
+                  </div>
 
-              {/* 1. Stop Selector */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-foreground">
-                    1. Select Route Stop
-                  </label>
-                  <span className="text-[10px] font-medium text-muted-foreground">
-                    {effectiveSimStops.length} {effectiveSimStops.length === 1 ? "stop" : "stops"} available
-                  </span>
+                  {effectiveSimStops.length === 0 ? (
+                    <div className="p-2 rounded-md border border-dashed border-border bg-muted/20 text-[11px] text-muted-foreground text-center">
+                      No route stops found
+                    </div>
+                  ) : (
+                    <Select
+                      value={simStopId}
+                      onValueChange={(val) => {
+                        if (val) setSimStopId(val);
+                      }}
+                      items={simStopSelectItems}
+                    >
+                      <SelectTrigger className="w-full h-8 px-2.5 text-xs bg-background">
+                        <SelectValue placeholder="Select a stop..." />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-56">
+                        {effectiveSimStops.map((stop) => {
+                          const hasAudio = !!stop.stopAudioUrl;
+                          return (
+                            <SelectItem key={stop.id} value={stop.id} className="text-xs py-1.5">
+                              <div className="flex items-center justify-between w-full gap-2">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <MapPin className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <span className="font-medium text-foreground truncate">{stop.label}</span>
+                                  {stop.name_kn && (
+                                    <span className="text-[10px] text-muted-foreground truncate">
+                                      ({stop.name_kn})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="shrink-0 ml-auto">
+                                  {hasAudio ? (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1 py-0.5 rounded">
+                                      <Volume2 className="h-2.5 w-2.5" /> Audio
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground bg-muted border border-border px-1 py-0.5 rounded">
+                                      <VolumeX className="h-2.5 w-2.5" /> None
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
-                {effectiveSimStops.length === 0 ? (
-                  <div className="p-3 rounded-lg border border-dashed border-border bg-muted/20 text-xs text-muted-foreground text-center">
-                    No route stops found. Configure Source, Destination, or Via stops in Route Setup.
-                  </div>
-                ) : (
+                {/* 2. Language Selector */}
+                <div className="col-span-5 space-y-1">
+                  <label className="text-xs font-semibold text-foreground">
+                    Language
+                  </label>
                   <Select
-                    value={simStopId}
+                    value={simLanguage}
                     onValueChange={(val) => {
-                      if (val) setSimStopId(val);
+                      if (val) setSimLanguage(val);
                     }}
-                    items={simStopSelectItems}
+                    items={languageItems}
                   >
-                    <SelectTrigger className="w-full h-9 px-3 text-xs bg-background">
-                      <SelectValue placeholder="Select a stop..." />
+                    <SelectTrigger className="w-full h-8 px-2.5 text-xs bg-background">
+                      <SelectValue placeholder="Language" />
                     </SelectTrigger>
-                    <SelectContent className="max-h-60">
-                      {effectiveSimStops.map((stop) => {
-                        const hasAudio = !!stop.stopAudioUrl;
-                        return (
-                          <SelectItem key={stop.id} value={stop.id} className="text-xs py-2">
-                            <div className="flex items-center justify-between w-full gap-2">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                <span className="font-medium text-foreground truncate">{stop.label}</span>
-                                {stop.name_kn && (
-                                  <span className="text-[11px] text-muted-foreground truncate">
-                                    ({stop.name_kn})
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0 ml-auto">
-                                {hasAudio ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
-                                    <Volume2 className="h-2.5 w-2.5" /> Audio
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
-                                    <VolumeX className="h-2.5 w-2.5" /> No Audio
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </SelectItem>
-                        );
-                      })}
+                    <SelectContent className="max-h-56">
+                      {languageItems.map((l) => (
+                        <SelectItem key={l.value} value={l.value} className="text-xs">
+                          {l.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                )}
+                </div>
               </div>
 
-              {/* 2. Announcement Stage */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">
-                  2. Announcement Stage
+              {/* Row 2: Announcement Stage Segmented Control */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-foreground">
+                  Announcement Stage
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-muted/60 border border-border">
                   {[
-                    { id: "current", label: "Current", sub: "Current stop is" },
-                    { id: "next", label: "Next", sub: "Next stop is" },
-                    { id: "arriving", label: "Arriving", sub: "Arriving at" },
+                    { id: "current", label: "Current Stop" },
+                    { id: "next", label: "Next Stop" },
+                    { id: "arriving", label: "Arriving Stop" },
                   ].map((stg) => {
                     const isSelected = simStage === stg.id;
                     return (
@@ -3290,141 +3316,88 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         type="button"
                         onClick={() => setSimStage(stg.id as any)}
                         className={cn(
-                          "flex flex-col items-center justify-center p-2.5 rounded-xl border text-left transition-all cursor-pointer select-none",
+                          "h-7 text-xs font-medium rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5 select-none",
                           isSelected
-                            ? "bg-primary/10 border-primary text-primary font-semibold ring-1 ring-primary shadow-xs"
-                            : "bg-card border-border hover:border-muted-foreground/50 text-foreground hover:bg-muted/40"
+                            ? "bg-background text-foreground font-semibold shadow-xs border border-border"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
                         )}
                       >
-                        <div className="flex items-center gap-1.5 text-xs font-bold">
-                          <div
-                            className={cn(
-                              "h-3 w-3 rounded-full border flex items-center justify-center shrink-0",
-                              isSelected
-                                ? "border-primary bg-primary"
-                                : "border-muted-foreground/60"
-                            )}
-                          >
-                            {isSelected && (
-                              <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
-                            )}
-                          </div>
-                          <span>{stg.label}</span>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground mt-1 text-center font-normal">
-                          "{stg.sub}..."
-                        </span>
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 rounded-full shrink-0 transition-colors",
+                            isSelected ? "bg-primary" : "bg-muted-foreground/30"
+                          )}
+                        />
+                        <span className="truncate">{stg.label}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* 3. Language Selector */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-foreground">
-                  3. Announcement Language
-                </label>
-                <Select
-                  value={simLanguage}
-                  onValueChange={(val) => {
-                    if (val) setSimLanguage(val);
-                  }}
-                  items={languageItems}
-                >
-                  <SelectTrigger className="w-full h-8 px-2.5 text-xs bg-background">
-                    <SelectValue placeholder="Select Language" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {languageItems.map((l) => (
-                      <SelectItem key={l.value} value={l.value} className="text-xs">
-                        {l.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* 4. Audio Pipeline Diagnostics Card */}
-              <div className="flex flex-col rounded-xl border border-border bg-card p-3.5 space-y-3">
-                <div className="flex items-center justify-between border-b border-border pb-2">
-                  <span className="text-xs font-bold text-foreground uppercase tracking-wider">
-                    Audio Pipeline Diagnostics
+              {/* Row 3: Live Output Preview & Audio Controls */}
+              <div className="flex flex-col rounded-xl border border-border bg-card p-3 space-y-2.5">
+                {/* Audio Readiness Badges Header */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Live Announcement
                   </span>
-                  <span className="text-[10px] font-mono text-muted-foreground">
-                    Chained Playback
-                  </span>
-                </div>
-
-                {/* Stage Audio Status */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    {stageAudioUrl ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                    )}
-                    <span className="font-medium text-foreground">Stage Audio</span>
-                  </div>
-                  {stageAudioUrl ? (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      {matchedStageAudio ? "Database Audio Ready" : "Static Preset Ready"}
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                      Stage Audio Not Available
-                    </span>
-                  )}
-                </div>
-
-                {/* Stop Audio Status */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    {stopAudioUrl ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                    )}
-                    <span className="font-medium text-foreground">Stop Audio</span>
-                  </div>
-                  {stopAudioUrl ? (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                      Stop Audio Ready
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                      Stop Audio Not Available
-                    </span>
-                  )}
-                </div>
-
-                {/* Live Announcement Output Preview */}
-                <div className="flex flex-col gap-1.5 pt-1 border-t border-border/60">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Live Announcement Output
-                  </span>
-                  <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/60 font-mono text-xs font-semibold text-foreground border border-border">
-                    <Volume2
+                  <div className="flex items-center gap-1.5">
+                    <span
                       className={cn(
-                        "h-4 w-4 shrink-0",
-                        playbackPhase !== "idle" ? "text-primary animate-pulse" : "text-muted-foreground"
+                        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border",
+                        stageAudioUrl
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
                       )}
-                    />
-                    <span className="truncate">
-                      {selectedSimStop
-                        ? simAnnouncementText || computeAnnouncementText(selectedSimStop, simStage, simLanguage)
-                        : "—"}
+                    >
+                      {stageAudioUrl ? (
+                        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                      )}
+                      Stage {stageAudioUrl ? "Audio Ready" : "Missing"}
+                    </span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border",
+                        stopAudioUrl
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                          : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                      )}
+                    >
+                      {stopAudioUrl ? (
+                        <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-2.5 w-2.5 shrink-0" />
+                      )}
+                      Stop {stopAudioUrl ? "Audio Ready" : "Missing"}
                     </span>
                   </div>
                 </div>
 
-                {/* Manual Audio Action Controls */}
-                <div className="flex items-center gap-2 pt-2 border-t border-border/60">
+                {/* Announcement Display Preview Box */}
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/60 font-mono text-xs font-semibold text-foreground border border-border min-h-[34px]">
+                  <Volume2
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      playbackPhase !== "idle" ? "text-primary animate-pulse" : "text-muted-foreground"
+                    )}
+                  />
+                  <span className="truncate flex-1 select-all">
+                    {selectedSimStop
+                      ? simAnnouncementText || computeAnnouncementText(selectedSimStop, simStage, simLanguage)
+                      : "—"}
+                  </span>
+                </div>
+
+                {/* Action Controls */}
+                <div className="flex items-center gap-2 pt-0.5">
                   <Button
                     type="button"
                     variant="default"
                     size="sm"
-                    className="flex-1 h-8 text-xs font-medium cursor-pointer"
+                    className="flex-1 h-8 text-xs font-semibold cursor-pointer"
                     onClick={() => playChainedAudio(stageAudioUrl, stopAudioUrl)}
                     disabled={!stageAudioUrl && !stopAudioUrl}
                   >
@@ -3434,37 +3407,12 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs font-medium px-3 cursor-pointer text-foreground"
+                    className="h-8 text-xs font-medium px-4 cursor-pointer text-foreground"
                     onClick={stopChainedAudio}
                     disabled={playbackPhase === "idle"}
                   >
-                    <Square className="h-3.5 w-3.5 mr-1" /> Stop
+                    <Square className="h-3 w-3 mr-1.5" /> Stop
                   </Button>
-                </div>
-              </div>
-
-              {/* 5. LED Signboard Display Spec */}
-              <div className="flex flex-col rounded-xl border border-border bg-card p-3 space-y-2">
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Signboard Display Spec
-                </span>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
-                    <span className="text-[10px] text-muted-foreground">Format</span>
-                    <span className="font-semibold text-foreground">Single Line</span>
-                  </div>
-                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
-                    <span className="text-[10px] text-muted-foreground">Scroll Type</span>
-                    <span className="font-semibold text-foreground">Right To Left</span>
-                  </div>
-                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
-                    <span className="text-[10px] text-muted-foreground">Text Height</span>
-                    <span className="font-semibold text-foreground">16 px</span>
-                  </div>
-                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
-                    <span className="text-[10px] text-muted-foreground">Scroll Speed</span>
-                    <span className="font-semibold text-foreground">4 (Normal)</span>
-                  </div>
                 </div>
               </div>
             </div>

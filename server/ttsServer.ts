@@ -14,7 +14,7 @@ import {
 } from "./voices.js";
 
 const app = express();
-const PORT = Number(process.env.PORT || process.env.TTS_PORT || 5050);
+const PORT = Number(process.env.TTS_PORT || 5050);
 
 app.use(cors());
 app.use(express.json());
@@ -210,21 +210,6 @@ app.post("/api/tts/synthesize", async (req: Request, res: Response) => {
     }
   }
 });
-
-// ─── Production Static File Serving (React SPA) ─────────────────────────────
-const distPath = path.resolve(process.cwd(), "dist");
-if (fs.existsSync(distPath)) {
-  console.log(`📦 Serving compiled static React frontend from: ${distPath}`);
-  app.use(express.static(distPath));
-
-  // SPA fallback: any non-API GET request serves dist/index.html
-  app.use((req, res, next) => {
-    if (req.method === "GET" && !req.path.startsWith("/api")) {
-      return res.sendFile(path.join(distPath, "index.html"));
-    }
-    next();
-  });
-}
 
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   app.listen(PORT, () => {

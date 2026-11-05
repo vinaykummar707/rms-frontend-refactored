@@ -65,16 +65,28 @@ export const STAGE_PRESETS: Record<string, IStagePresetRecord> = {
     next_stop: "ପରବର୍ତ୍ତୀ ଷ୍ଟପ୍",
     arriving_stop: "ଆସୁଥିବା ଷ୍ଟପ୍",
   },
+  "as-IN": {
+    current_stop: "বৰ্তমানৰ ষ্টপ",
+    next_stop: "পৰৱৰ্তী ষ্টপ",
+    arriving_stop: "উপস্থিত হ'বলগীয়া ষ্টপ",
+  },
+  "ur-IN": {
+    current_stop: "موجودہ سٹاپ",
+    next_stop: "اگلا سٹاپ",
+    arriving_stop: "پہنچنے والا سٹاپ",
+  },
 };
 
 /**
  * Returns the recommended native speech preset for a language and stage type.
  */
 export function getStagePreset(language: string, stageType: StageType): string {
-  const langKey = language.toLowerCase();
-  const found = Object.keys(STAGE_PRESETS).find(
-    (k) => k.toLowerCase() === langKey
-  );
+  const langKey = (language || "").toLowerCase().trim();
+  const baseLang = langKey.split("-")[0].split("_")[0];
+  const found = Object.keys(STAGE_PRESETS).find((k) => {
+    const kLower = k.toLowerCase();
+    return kLower === langKey || kLower.split("-")[0].split("_")[0] === baseLang;
+  });
   if (found && STAGE_PRESETS[found]?.[stageType]) {
     return STAGE_PRESETS[found][stageType];
   }

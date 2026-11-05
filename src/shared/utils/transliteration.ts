@@ -6,7 +6,11 @@ export const fetchTransliteration = async (
   langCode: string
 ): Promise<string[]> => {
   try {
-    const baseLangCode = langCode.replace(/\d+$/, "");
+    const baseLangCode = (langCode || "")
+      .toLowerCase()
+      .split("-")[0]
+      .split("_")[0]
+      .replace(/\d+$/, "");
     const response = await fetch(
       `https://inputtools.google.com/request?text=${encodeURIComponent(
         word

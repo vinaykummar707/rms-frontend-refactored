@@ -25,6 +25,12 @@ describe("Stage Audio Service & Presets", () => {
     expect(getStagePreset("hi-IN", "current_stop")).toBe("वर्तमान स्टॉप है");
     expect(getStagePreset("hi-IN", "next_stop")).toBe("अगला स्टॉप है");
     expect(getStagePreset("hi-IN", "arriving_stop")).toBe("आने वाला स्टॉप है");
+
+    // Short language code matching (e.g. 'kn', 'hi', 'te')
+    expect(getStagePreset("kn", "current_stop")).toBe("ಪ್ರಸ್ತುತ ನಿಲ್ದಾಣ");
+    expect(getStagePreset("hi", "next_stop")).toBe("अगला स्टॉप है");
+    expect(getStagePreset("te", "arriving_stop")).toBe("చేరుకుంటున్న స్టాప్");
+    expect(getStagePreset("ta", "current_stop")).toBe("தற்போதைய நிறுத்தம்");
   });
 
   it("should generate default reference text for language and stage type", () => {

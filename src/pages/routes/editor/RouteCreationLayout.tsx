@@ -96,7 +96,10 @@ import type { IRoute } from "@/shared/types/route";
 import { routeCrud } from "@/features/routes/api/routeCrud";
 import { stopCrud } from "@/features/stops/api/stopCrud";
 import { stageAudioCrud } from "@/features/stageAudios/api/stageAudioCrud";
-import { getStagePreset } from "@/features/stageAudios/services/stageAudioPresets";
+import {
+  computeSyncAnnouncementText,
+  getTransliteratedAnnouncementText,
+} from "@/features/routes/utils/routeAnnouncementTransliteration";
 import type { IStageAudio, StageType } from "@/shared/types/stageAudio";
 import { checkActiveDuplicate } from "@/shared/hooks/useCrud";
 import { notify } from "@/core/notifications/notificationService";
@@ -364,6 +367,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const [simStopId, setSimStopId] = useState<string>("");
     const [simStage, setSimStage] = useState<"current" | "next" | "arriving">("current");
     const [simLanguage, setSimLanguage] = useState<string>("en");
+    const [simAnnouncementText, setSimAnnouncementText] = useState<string>("");
     const [playbackPhase, setPlaybackPhase] = useState<"idle" | "playing_stage" | "playing_stop">("idle");
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
@@ -1104,28 +1108,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
     const computeAnnouncementText = useCallback(
       (stop: RouteSimStopOption, stage: "current" | "next" | "arriving", lang: string) => {
-        const isKn = lang === "kn" || lang.startsWith("kn-");
-        const displayName = isKn && stop.name_kn ? stop.name_kn : stop.name;
-
-        if (lang.startsWith("en")) {
-          const prefix =
-            stage === "current"
-              ? "CURRENT STOP IS"
-              : stage === "next"
-              ? "NEXT STOP IS"
-              : "ARRIVING AT";
-          return `${prefix} ${stop.name.toUpperCase()}`;
-        }
-
-        const stagePreset = getStagePreset(
-          lang,
-          stage === "current"
-            ? "current_stop"
-            : stage === "next"
-            ? "next_stop"
-            : "arriving_stop"
-        );
-        return `${stagePreset} ${displayName}`;
+        return computeSyncAnnouncementText(stop, stage, lang);
       },
       []
     );
@@ -1204,13 +1187,12 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
     const syncStopAnnouncementSimulation = useCallback(
       (
-        stop: RouteSimStopOption,
+        text: string,
         stage: "current" | "next" | "arriving",
         lang: string,
         stageAudio: string | null,
         stopAudio: string | null
       ) => {
-        const text = computeAnnouncementText(stop, stage, lang);
         const singleSlide: Simulation = {
           format: "single",
           texts: {
@@ -1242,7 +1224,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         setSelectedSimulationIndex(0);
         setIsPaused(false);
       },
-      [computeAnnouncementText, currentSimulation?.width, setValue, setSelectedSimulationIndex]
+      [currentSimulation?.width, setValue, setSelectedSimulationIndex]
     );
 
     const prevSimTriggerRef = useRef<string>("");
@@ -1253,8 +1235,12 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       const hasChanged = prevSimTriggerRef.current !== triggerKey;
       prevSimTriggerRef.current = triggerKey;
 
+      // 1. Immediate sync computation so the preview and slide are never blank
+      const initialText = computeSyncAnnouncementText(selectedSimStop, simStage, simLanguage);
+      setSimAnnouncementText(initialText);
+
       syncStopAnnouncementSimulation(
-        selectedSimStop,
+        initialText,
         simStage,
         simLanguage,
         stageAudioUrl,
@@ -1264,6 +1250,29 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       if (hasChanged) {
         playChainedAudio(stageAudioUrl, stopAudioUrl);
       }
+
+      // 2. Asynchronously resolve transliterated text if needed
+      let isCancelled = false;
+      getTransliteratedAnnouncementText(selectedSimStop, simStage, simLanguage)
+        .then((resolvedText) => {
+          if (!isCancelled && resolvedText) {
+            setSimAnnouncementText(resolvedText);
+            syncStopAnnouncementSimulation(
+              resolvedText,
+              simStage,
+              simLanguage,
+              stageAudioUrl,
+              stopAudioUrl
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn("Announcement transliteration failed:", err);
+        });
+
+      return () => {
+        isCancelled = true;
+      };
     }, [
       selectedTab,
       selectedSimStop,
@@ -3200,10 +3209,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
             {/* Simulator Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Info Notice */}
-              <div className="p-3 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground leading-relaxed">
-                Simulate synchronized LED signboard scrolling and chained voice announcements (<span className="font-semibold text-foreground">Stage Intro + Stop Name</span>) as broadcast to transit passengers.
-              </div>
+             
 
               {/* 1. Stop Selector */}
               <div className="space-y-1.5">
@@ -3406,7 +3412,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     />
                     <span className="truncate">
                       {selectedSimStop
-                        ? computeAnnouncementText(selectedSimStop, simStage, simLanguage)
+                        ? simAnnouncementText || computeAnnouncementText(selectedSimStop, simStage, simLanguage)
                         : "—"}
                     </span>
                   </div>

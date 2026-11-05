@@ -2139,60 +2139,30 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     </div>
                   </div>
                   {sourceInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
-                    <div className="relative flex items-center">
-                      <Select
-                        value={sourceVal ? sourceVal : null}
-                        onValueChange={(val) => {
-                          setValue("source", val || "", { shouldDirty: true });
-                        }}
-                        items={sourceSelectItems}
-                      >
-                        <SelectTrigger className="w-full h-8 pl-2.5 pr-8 text-xs font-medium">
-                          <SelectValue placeholder="Select origin stop..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sourceSelectItems.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {sourceVal && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            setValue("source", "", { shouldDirty: true });
-                          }}
-                          className="absolute right-7 h-5 w-5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer z-10"
-                          title="Clear stop selection"
-                          aria-label="Clear source stop"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
+                    <Select
+                      value={sourceVal ? sourceVal : null}
+                      onValueChange={(val) => {
+                        setValue("source", val || "", { shouldDirty: true });
+                      }}
+                      items={sourceSelectItems}
+                    >
+                      <SelectTrigger className="w-full h-8 px-2.5 text-xs font-medium">
+                        <SelectValue placeholder="Select origin stop..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sourceSelectItems.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
-                    <div className="relative flex items-center">
-                      <Input
-                        placeholder="e.g. KEMPEGOWDA BS"
-                        className="h-8 text-xs font-medium pr-8"
-                        {...register("source")}
-                      />
-                      {sourceVal && (
-                        <button
-                          type="button"
-                          onClick={() => setValue("source", "", { shouldDirty: true })}
-                          className="absolute right-2 h-5 w-5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer z-10"
-                          title="Clear stop selection"
-                          aria-label="Clear source stop"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
+                    <Input
+                      placeholder="e.g. KEMPEGOWDA BS"
+                      className="h-8 text-xs font-medium"
+                      {...register("source")}
+                    />
                   )}
                 </div>
 
@@ -2236,60 +2206,30 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     </div>
                   </div>
                   {destInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
-                    <div className="relative flex items-center">
-                      <Select
-                        value={destVal ? destVal : null}
-                        onValueChange={(val) => {
-                          setValue("destination", val || "", { shouldDirty: true });
-                        }}
-                        items={destSelectItems}
-                      >
-                        <SelectTrigger className="w-full h-8 pl-2.5 pr-8 text-xs font-medium">
-                          <SelectValue placeholder="Select terminus stop..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {destSelectItems.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {destVal && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            setValue("destination", "", { shouldDirty: true });
-                          }}
-                          className="absolute right-7 h-5 w-5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer z-10"
-                          title="Clear stop selection"
-                          aria-label="Clear destination stop"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
+                    <Select
+                      value={destVal ? destVal : null}
+                      onValueChange={(val) => {
+                        setValue("destination", val || "", { shouldDirty: true });
+                      }}
+                      items={destSelectItems}
+                    >
+                      <SelectTrigger className="w-full h-8 px-2.5 text-xs font-medium">
+                        <SelectValue placeholder="Select terminus stop..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {destSelectItems.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
-                    <div className="relative flex items-center">
-                      <Input
-                        placeholder="e.g. KADUGODI BS"
-                        className="h-8 text-xs font-medium pr-8"
-                        {...register("destination")}
-                      />
-                      {destVal && (
-                        <button
-                          type="button"
-                          onClick={() => setValue("destination", "", { shouldDirty: true })}
-                          className="absolute right-2 h-5 w-5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors cursor-pointer z-10"
-                          title="Clear stop selection"
-                          aria-label="Clear destination stop"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
+                    <Input
+                      placeholder="e.g. KADUGODI BS"
+                      className="h-8 text-xs font-medium"
+                      {...register("destination")}
+                    />
                   )}
                 </div>
 

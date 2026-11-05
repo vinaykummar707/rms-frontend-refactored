@@ -14,7 +14,7 @@ import {
 } from "./voices.js";
 
 const app = express();
-const PORT = Number(process.env.TTS_PORT || 5050);
+const PORT = Number(process.env.PORT || process.env.TTS_PORT || 5050);
 
 app.use(cors());
 app.use(express.json());

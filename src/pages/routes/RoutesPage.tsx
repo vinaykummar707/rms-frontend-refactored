@@ -45,15 +45,15 @@ import {
   RefreshCw,
   Download,
   Trash2,
-  Search,
-  Filter,
   Warehouse,
   Building2,
   Box,
   AlertTriangle,
   Loader2,
   X,
+  MapIcon,
 } from "lucide-react";
+import { Field, FieldLabel } from "@/components/ui/field";
 
 export function RoutesPage() {
   const navigate = useNavigate();
@@ -592,14 +592,17 @@ export function RoutesPage() {
         {/* Left Side: Search & Filter Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 max-w-3xl flex-wrap">
           {/* Search Input */}
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-            <Input
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by route number, source, destination, or creator..."
-              className="pl-9 pr-8 h-9 text-xs"
-            />
+          <div className=" min-w-[220px]">
+            <Field>
+              <FieldLabel>Search</FieldLabel>
+
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by route number, source, destination, or creator..."
+                className="pl-9 pr-8 h-9 text-xs"
+              />
+            </Field>
             {searchTerm && (
               <button
                 type="button"
@@ -615,62 +618,68 @@ export function RoutesPage() {
           {/* Region Select */}
           {hasRegions && (
             <div className="w-full sm:w-[190px] shrink-0">
-              <Select
-                value={selectedRegion?.id ?? ""}
-                onValueChange={handleRegionChange}
-                items={regionItems}
-                disabled={isRegionOrDepotAdmin}
-              >
-                <SelectTrigger className="h-9 text-xs w-full">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <SelectValue placeholder="Select region...">
-                      {(val: string | null) => {
-                        if (!val) return null;
-                        return regionMap.get(val) || val;
-                      }}
-                    </SelectValue>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {visibleRegions.map((reg) => (
-                    <SelectItem key={reg.id} value={reg.id}>
-                      {reg.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Field>
+                <FieldLabel>Select Region</FieldLabel>
+                <Select
+                  value={selectedRegion?.id ?? ""}
+                  onValueChange={handleRegionChange}
+                  items={regionItems}
+                  disabled={isRegionOrDepotAdmin}
+                >
+                  <SelectTrigger className="h-9 text-xs w-full">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <MapIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <SelectValue placeholder="Select region...">
+                        {(val: string | null) => {
+                          if (!val) return null;
+                          return regionMap.get(val) || val;
+                        }}
+                      </SelectValue>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {visibleRegions.map((reg) => (
+                      <SelectItem key={reg.id} value={reg.id}>
+                        {reg.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
           )}
 
           {/* Depot Select */}
           {hasDepots && (
             <div className="w-full sm:w-[190px] shrink-0">
-              <Select
-                value={selectedDepot?.id ?? ""}
-                onValueChange={handleDepotChange}
-                items={depotItems}
-                disabled={isDepotAdmin}
-              >
-                <SelectTrigger className="h-9 text-xs w-full">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Warehouse className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <SelectValue placeholder="Select depot...">
-                      {(val: string | null) => {
-                        if (!val) return null;
-                        return depotMap.get(val) || val;
-                      }}
-                    </SelectValue>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {visibleDepots.map((depot) => (
-                    <SelectItem key={depot.id} value={depot.id}>
-                      {depot.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Field>
+                <FieldLabel>Select Depot</FieldLabel>
+                <Select
+                  value={selectedDepot?.id ?? ""}
+                  onValueChange={handleDepotChange}
+                  items={depotItems}
+                  disabled={isDepotAdmin}
+                >
+                  <SelectTrigger className="h-9 text-xs w-full">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Warehouse className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <SelectValue placeholder="Select depot...">
+                        {(val: string | null) => {
+                          if (!val) return null;
+                          return depotMap.get(val) || val;
+                        }}
+                      </SelectValue>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {visibleDepots.map((depot) => (
+                      <SelectItem key={depot.id} value={depot.id}>
+                        {depot.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
           )}
         </div>
@@ -753,7 +762,7 @@ export function RoutesPage() {
                   className="h-9 gap-1.5 text-xs font-semibold"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  <span>Delete ({selectedRouteIds.length})</span>
+                  <span>Delete All ({selectedRouteIds.length})</span>
                 </Button>
               )}
             </>
@@ -886,8 +895,8 @@ export function RoutesPage() {
             {searchTerm
               ? `No routes match "${searchTerm}" in this depot.`
               : versionFilter !== "all"
-              ? `No ${versionFilter.toUpperCase()} routes found for this depot.`
-              : `No routes have been created for ${selectedDepot?.name || "this depot"} yet.`}
+                ? `No ${versionFilter.toUpperCase()} routes found for this depot.`
+                : `No routes have been created for ${selectedDepot?.name || "this depot"} yet.`}
           </p>
           {searchTerm ? (
             <Button
@@ -969,17 +978,7 @@ export function RoutesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingRoute(null)}
-              disabled={isDeletingSingle}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"
@@ -1025,17 +1024,7 @@ export function RoutesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsBulkDeleteOpen(false)}
-              disabled={isDeletingBulk}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"

@@ -669,17 +669,7 @@ export function RegularRoutesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingRoute(null)}
-              disabled={isDeletingSingle}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"
@@ -725,17 +715,7 @@ export function RegularRoutesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsBulkDeleteOpen(false)}
-              disabled={isDeletingBulk}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"

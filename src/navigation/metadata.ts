@@ -156,6 +156,15 @@ export const PROTECTED_ROUTES_METADATA: readonly RouteMetadata[] = [
     requiresAuth: true,
     isNavMenu: true,
   },
+  {
+    path: "premade-audios",
+    title: "Premade Audios",
+    description: "Centralized audio inventory, on-demand Edge-TTS generation, and audio repository",
+    roles: [ROLES.MASTER],
+    features: [],
+    requiresAuth: true,
+    isNavMenu: true,
+  },
 ] as const;
 
 export const EDITOR_ROUTES_METADATA: readonly RouteMetadata[] = [

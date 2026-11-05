@@ -1,21 +1,26 @@
 import { supabase } from "@/integrations/supabase/client";
-import { deleteStopAudioFile } from "@/integrations/supabase/storage";
-import { handleStopAudioGeneration } from "@/shared/utils/ttsUtils";
-import type { IStop, IStopWithAudio, IStopCreate } from "@/shared/types/stop";
+import {
+  deleteStopAudioFile,
+  uploadStopAudioFile,
+} from "@/integrations/supabase/storage";
+import {
+  generateAndUploadStopAudio,
+  type SynthesizeOptions,
+} from "./edgeTtsService";
+import type { IStop, IStopWithAudio, IStopCreate, IStopAudio } from "@/shared/types/stop";
 
 /**
- * Generates an audio announcement file for a stop using Sarvam TTS and saves it in Supabase
+ * Generates an audio announcement file for a stop using Microsoft Edge TTS and saves it in Supabase
  */
 export async function generateStopAudio(
   text: string,
   stopId: string,
-  languageCode: string = "en-IN",
-  voice: string = "meera"
+  options: SynthesizeOptions = {}
 ) {
   if (!text.trim() || !stopId) {
     throw new Error("Text and stopId are required for audio generation");
   }
-  return await handleStopAudioGeneration(text, stopId, languageCode, voice);
+  return await generateAndUploadStopAudio(text, stopId, options);
 }
 
 /**
@@ -99,7 +104,7 @@ export async function generateBulkStopAudio(
     onProgress?.(i + 1, stops.length);
     try {
       if (s.name && s.id) {
-        await handleStopAudioGeneration(s.name, s.id);
+        await generateAndUploadStopAudio(s.name, s.id);
         successCount++;
       }
     } catch (e: any) {
@@ -118,6 +123,34 @@ export async function deleteAllStopsForDepot(depotId: string): Promise<void> {
   const { error } = await supabase.from("stops").delete().eq("depot_id", depotId);
   if (error) {
     throw new Error(`Failed to delete all stops: ${error.message}`);
+  }
+}
+
+/**
+ * Bulk deletes selected stops by their IDs and cleans up any linked audio files
+ */
+export async function deleteSelectedStops(
+  stopIds: string[],
+  stopsList?: IStopWithAudio[]
+): Promise<void> {
+  if (!stopIds.length) return;
+
+  if (stopsList && stopsList.length > 0) {
+    const toDelete = stopsList.filter((s) => stopIds.includes(s.id));
+    await Promise.allSettled(
+      toDelete.map((s) => {
+        const audio = Array.isArray(s.stop_audios) ? s.stop_audios[0] : s.stop_audios;
+        if (audio?.url) {
+          return deleteAudioFileAndRecord(audio.url, s.id, audio.id);
+        }
+        return Promise.resolve();
+      })
+    );
+  }
+
+  const { error } = await supabase.from("stops").delete().in("id", stopIds);
+  if (error) {
+    throw new Error(`Failed to delete selected stops: ${error.message}`);
   }
 }
 
@@ -210,5 +243,71 @@ export async function importStopsFromCSV(
   const { error } = await supabase.from("stops").insert(stopsToInsert);
   if (error) throw error;
   return stopsToInsert.length;
+}
+
+/**
+ * Uploads an audio file (.mp3, .wav) for a stop and inserts a record into stop_audios
+ */
+export async function uploadStopAudio(
+  file: File,
+  stopId: string
+): Promise<IStopAudio> {
+  if (!file || !stopId) {
+    throw new Error("File and stopId are required for audio upload");
+  }
+
+  // 1. Upload to Supabase Storage bucket 'stops'
+  const { fileUrl, size } = await uploadStopAudioFile(file, stopId);
+
+  // 2. Insert metadata record in stop_audios table
+  const { data, error } = await supabase
+    .from("stop_audios")
+    .insert([
+      {
+        stop_id: stopId,
+        url: fileUrl,
+        file_name: file.name,
+        file_size: size,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to save stop audio record: ${error.message}`);
+  }
+
+  return data as IStopAudio;
+}
+
+/**
+ * Checks if an active stop with the given name already exists in the same depot
+ */
+export async function checkStopNameDuplicate(
+  name: string,
+  depotId: string,
+  excludeId?: string
+): Promise<boolean> {
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed || !depotId) return false;
+
+  let query = supabase
+    .from("stops")
+    .select("id, name")
+    .eq("depot_id", depotId);
+
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn("Stop duplicate check error:", error);
+    return false;
+  }
+
+  return (data || []).some(
+    (s: any) => s.name?.trim().toLowerCase() === trimmed
+  );
 }
 

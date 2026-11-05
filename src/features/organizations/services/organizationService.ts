@@ -111,6 +111,10 @@ export async function provisionSTUOrganization(
   const trimmedAdminEmail = adminUser.email.trim();
 
   // 1. Pre-validation checks
+  if (trimmedAdminEmail.toLowerCase() === trimmedOrgEmail.toLowerCase()) {
+    throw new Error("Administrative email and corporate email cannot be the same.");
+  }
+
   if (organization.PIS && !organization.v1_routes && !organization.v2_routes) {
     throw new Error("At least one route format engine (V1 or V2) must be selected when PIS is enabled.");
   }

@@ -16,7 +16,6 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import {
-  BusFront,
   LayoutDashboard,
   Building2,
   Box,
@@ -27,6 +26,7 @@ import {
   GitBranch,
   Navigation,
   Type,
+  Volume2,
 } from "lucide-react";
 
 interface NavItem {
@@ -130,6 +130,12 @@ export function AppSidebar() {
 
   const adminNav: NavItem[] = [
     {
+      title: "Premade Audios",
+      url: "/home/premade-audios",
+      icon: Volume2,
+      roles: [ROLES.MASTER],
+    },
+    {
       title: "Font Configuration",
       url: "/home/font-configuration",
       icon: Type,
@@ -175,14 +181,12 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-border">
       {/* Brand Header */}
-      <SidebarHeader className="border-b border-sidebar-border px-3.5 py-3">
+      <SidebarHeader className="border-b h-14 border-sidebar-border px-3.5 py-3">
         <Link
           to="/home"
           className="flex items-center gap-3 transition-opacity hover:opacity-90"
         >
-          <div className="h-7.5 w-7.5 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0 shadow-xs">
-            <BusFront className="h-5 w-5 stroke-[2.2]" />
-          </div>
+          
           <div className="flex flex-col truncate group-data-[collapsible=icon]:hidden">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-sm tracking-tight text-foreground">

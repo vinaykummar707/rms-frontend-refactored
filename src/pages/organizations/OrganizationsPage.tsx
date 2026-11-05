@@ -1073,17 +1073,7 @@ export function OrganizationsPage() {
               </div>
 
               {/* Dialog Footer */}
-              <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingOrg(null)}
-                  disabled={isUpdating}
-                  className="text-xs"
-                >
-                  Cancel
-                </Button>
+              <DialogFooter className="pt-3 border-t border-border">
                 <Button
                   type="submit"
                   size="sm"
@@ -1159,17 +1149,7 @@ export function OrganizationsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setStatusConfirmOrg(null)}
-              disabled={isTogglingStatus}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant={statusConfirmOrg?.active ? "destructive" : "default"}
@@ -1230,17 +1210,7 @@ export function OrganizationsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingOrg(null)}
-              disabled={isDeleting}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"

@@ -9,4 +9,5 @@ export * from "./textConfig";
 export * from "./routeConfigV2";
 export * from "./v1RouteTypes";
 export * from "./bitmap";
+export * from "./premadeAudio";
 

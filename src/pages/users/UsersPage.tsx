@@ -8,10 +8,7 @@ import { loggedUserCrud } from "@/features/users/api/userCrud";
 import { roleCrud } from "@/features/users/api/roleCrud";
 import { regionCrud } from "@/features/regions/api/regionCrud";
 import { depotCrud } from "@/features/depots/api/depotCrud";
-import {
-  checkHierarchyUniqueness,
-  sendUserPasswordReset,
-} from "@/features/users/services/userService";
+import { checkHierarchyUniqueness } from "@/features/users/services/userService";
 import { getUserDeleteImpactMessage } from "@/shared/utils/deleteImpact";
 import { canCreateUserOfRole } from "@/core/authorization/permissions";
 import { isSuperAdmin } from "@/core/authorization/customerTier";
@@ -21,6 +18,8 @@ import { notify } from "@/core/notifications/notificationService";
 import type { ILoggedUser, IRole } from "@/shared/types/user";
 import type { IRegion } from "@/shared/types/region";
 import type { IDepot } from "@/shared/types/depot";
+import { Checkbox } from "@/components/ui/checkbox";
+import { PasswordViewerCell } from "@/pages/regularCustomers/components/PasswordViewerCell";
 import {
   Card,
   CardHeader,
@@ -73,11 +72,28 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Radio,
+  Sliders,
+  Volume2,
+  Cpu,
 } from "lucide-react";
 
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 const PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
+
+function FieldErrorText({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
+      <AlertCircle className="h-3 w-3 shrink-0" />
+      <span>{message}</span>
+    </p>
+  );
+}
 
 const toNullableUuid = (val?: string | null): string | null => {
   if (!val) return null;
@@ -90,8 +106,6 @@ export function UsersPage() {
   const { selectedOrganization } = useOrganizationStore();
   const selectedRegion = useRegionStore((state) => state.selectedRegion);
 
-  const activeOrg =
-    selectedOrganization || (loggedInUser?.organization as any) || null;
   const activeOrgId =
     selectedOrganization?.id || loggedInUser?.organization_id || loggedInUser?.organization?.id;
   const activeOrgName =
@@ -112,12 +126,12 @@ export function UsersPage() {
 
   // Dialog States
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [editingUser, setEditingUser] = useState<ILoggedUser | null>(null);
   const [deletingUser, setDeletingUser] = useState<ILoggedUser | null>(null);
   const [deleteImpactMsg, setDeleteImpactMsg] = useState("");
   const [isLoadingImpact, setIsLoadingImpact] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Status Suspension Dialog State
   const [statusPromptUser, setStatusPromptUser] = useState<{
@@ -140,12 +154,19 @@ export function UsersPage() {
   const [formDepotError, setFormDepotError] = useState("");
   const [formActive, setFormActive] = useState(true);
   const [formV1, setFormV1] = useState(false);
-  const [formV2, setFormV2] = useState(true);
-  const [formPIS, setFormPIS] = useState(true);
+  const [formV2, setFormV2] = useState(false);
+  const [formPIS, setFormPIS] = useState(false);
   const [formPAS, setFormPAS] = useState(false);
   const [formITMS, setFormITMS] = useState(false);
   const [formRouteEngineError, setFormRouteEngineError] = useState("");
+  const [formModuleError, setFormModuleError] = useState("");
+  const [isCheckingStep, setIsCheckingStep] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const steps = [
+    { num: 1, title: "Account Details", icon: KeyRound },
+    { num: 2, title: "Transit Modules", icon: Sliders },
+  ];
 
   // Scoped User Query
   const userFilters = useMemo(() => {
@@ -289,6 +310,7 @@ export function UsersPage() {
   // Open Create Modal
   const handleOpenCreate = () => {
     setEditingUser(null);
+    setCurrentStep(1);
     setFormEmail("");
     setFormEmailError("");
     setFormPassword("");
@@ -301,21 +323,23 @@ export function UsersPage() {
     setFormDepotId("");
     setFormDepotError("");
     setFormActive(true);
-    setFormV1(Boolean(activeOrg?.v1_routes ?? false));
-    setFormV2(Boolean(activeOrg?.v2_routes ?? true));
-    setFormPIS(Boolean(activeOrg?.PIS ?? true));
-    setFormPAS(Boolean(activeOrg?.PAS ?? false));
-    setFormITMS(Boolean(activeOrg?.ITMS ?? false));
+    setFormV1(false);
+    setFormV2(false);
+    setFormPIS(false);
+    setFormPAS(false);
+    setFormITMS(false);
     setFormRouteEngineError("");
+    setFormModuleError("");
     setIsFormOpen(true);
   };
 
   // Open Edit Modal
   const handleOpenEdit = (userItem: ILoggedUser) => {
     setEditingUser(userItem);
+    setCurrentStep(1);
     setFormEmail(userItem.email || "");
     setFormEmailError("");
-    setFormPassword("");
+    setFormPassword(userItem.password || "");
     setFormPasswordError("");
     setShowPassword(false);
     setFormRoleId(userItem.role_id || "");
@@ -326,11 +350,12 @@ export function UsersPage() {
     setFormDepotError("");
     setFormActive(Boolean(userItem.active));
     setFormV1(Boolean(userItem.v1_routes));
-    setFormV2(userItem.v2_routes !== false);
-    setFormPIS(Boolean((userItem as any).PIS ?? userItem.organization?.PIS ?? true));
-    setFormPAS(Boolean((userItem as any).PAS ?? userItem.organization?.PAS ?? false));
-    setFormITMS(Boolean((userItem as any).ITMS ?? userItem.organization?.ITMS ?? false));
+    setFormV2(Boolean(userItem.v2_routes));
+    setFormPIS(Boolean((userItem as any).PIS));
+    setFormPAS(Boolean((userItem as any).PAS));
+    setFormITMS(Boolean((userItem as any).ITMS));
     setFormRouteEngineError("");
+    setFormModuleError("");
     setIsFormOpen(true);
   };
 
@@ -346,10 +371,8 @@ export function UsersPage() {
     selectedRoleName === "depot_admin";
   const requiresDepot = selectedRoleName === "depot_admin";
 
-  // Form Submit Handler
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  // Step Navigation
+  const handleNext = async () => {
     let hasError = false;
     const trimmedEmail = formEmail.trim();
 
@@ -359,6 +382,8 @@ export function UsersPage() {
     } else if (!EMAIL_REGEX.test(trimmedEmail)) {
       setFormEmailError("Enter a valid email address.");
       hasError = true;
+    } else {
+      setFormEmailError("");
     }
 
     if (!editingUser) {
@@ -370,32 +395,42 @@ export function UsersPage() {
           "Password must be at least 8 characters and include uppercase, lowercase, number, and a special character."
         );
         hasError = true;
+      } else {
+        setFormPasswordError("");
       }
     } else {
-      // Optional password reset by Super Admin in edit mode
-      if (isSuper && formPassword && formPassword.trim().length > 0) {
-        if (!PASSWORD_REGEX.test(formPassword)) {
-          setFormPasswordError(
-            "Password must be at least 8 characters and include uppercase, lowercase, number, and a special character."
-          );
-          hasError = true;
-        }
+      if (!formPassword || formPassword.trim().length === 0) {
+        setFormPasswordError("Password is required.");
+        hasError = true;
+      } else if (formPassword !== (editingUser.password || "") && !PASSWORD_REGEX.test(formPassword)) {
+        setFormPasswordError(
+          "Password must be at least 8 characters and include uppercase, lowercase, number, and a special character."
+        );
+        hasError = true;
+      } else {
+        setFormPasswordError("");
       }
     }
 
     if (!formRoleId) {
       setFormRoleError("Please select a role.");
       hasError = true;
+    } else {
+      setFormRoleError("");
     }
 
     if (requiresRegion && !formRegionId) {
       setFormRegionError("Please select an assigned region.");
       hasError = true;
+    } else {
+      setFormRegionError("");
     }
 
     if (requiresDepot && !formDepotId) {
       setFormDepotError("Please select an assigned depot.");
       hasError = true;
+    } else {
+      setFormDepotError("");
     }
 
     if (!toNullableUuid(activeOrgId)) {
@@ -403,22 +438,27 @@ export function UsersPage() {
       hasError = true;
     }
 
-    // Validation: If PIS is enabled, at least 1 route engine (V1 or V2) must be selected
-    if (formPIS && !formV1 && !formV2) {
-      setFormRouteEngineError(
-        "At least one route engine (V1 or V2) must be selected when PIS is enabled."
-      );
-      notify.error(
-        "At least one route engine (V1 or V2) must be selected when PIS is enabled."
-      );
-      hasError = true;
-    }
-
     if (hasError) return;
 
-    // Check 1:1 hierarchy uniqueness check
+    // Check email uniqueness & 1:1 hierarchy uniqueness check
     try {
-      setIsSubmitting(true);
+      setIsCheckingStep(true);
+
+      // 1. Check if user already exists
+      if (!editingUser) {
+        const { data: existingUser } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", trimmedEmail)
+          .maybeSingle();
+
+        if (existingUser) {
+          setFormEmailError("A user with this email address already exists.");
+          return;
+        }
+      }
+
+      // 2. Check 1:1 hierarchy uniqueness check
       const isDuplicate = await checkHierarchyUniqueness(
         selectedRoleName,
         {
@@ -449,10 +489,52 @@ export function UsersPage() {
           setFormDepotError(errorMsg);
         }
 
-        notify.error(errorMsg);
-        setIsSubmitting(false);
         return;
       }
+    } catch (err: any) {
+      console.warn("Step 1 validation check error:", err);
+    } finally {
+      setIsCheckingStep(false);
+    }
+
+    setCurrentStep(2);
+  };
+
+  const handleBack = () => {
+    setFormRouteEngineError("");
+    setFormModuleError("");
+    setCurrentStep(1);
+  };
+
+  // Form Submit Handler
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (currentStep === 1) {
+      await handleNext();
+      return;
+    }
+
+    const trimmedEmail = formEmail.trim();
+
+    // Validation: At least one module must be selected
+    if (!formPIS && !formPAS && !formITMS) {
+      setFormModuleError(
+        "At least one intelligent transit module (PIS, PAS, or ITMS) must be enabled."
+      );
+      return;
+    }
+
+    // Validation: If PIS is enabled, at least 1 route engine (V1 or V2) must be selected
+    if (formPIS && !formV1 && !formV2) {
+      setFormRouteEngineError(
+        "At least one route engine (V1 or V2) must be selected when PIS is enabled."
+      );
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
 
       const payload: Record<string, any> = {
         role_id: toNullableUuid(formRoleId)!,
@@ -471,7 +553,7 @@ export function UsersPage() {
       if (editingUser) {
         // UPDATE MODE
         const updatePayload: Record<string, any> = { ...payload };
-        if (isSuper && formPassword && formPassword.trim().length > 0) {
+        if (formPassword && formPassword.trim().length > 0) {
           updatePayload.password = formPassword.trim();
         }
 
@@ -508,7 +590,7 @@ export function UsersPage() {
 
       if (existingUser) {
         setFormEmailError("A user with this email address already exists.");
-        notify.error("A user with this email address already exists.");
+        setCurrentStep(1);
         setIsSubmitting(false);
         return;
       }
@@ -676,18 +758,7 @@ export function UsersPage() {
     }
   };
 
-  // Reset Password Trigger
-  const handleTriggerPasswordReset = async (email: string) => {
-    try {
-      setIsResettingPassword(true);
-      await sendUserPasswordReset(email);
-      notify.success(`Password reset email sent to ${email}`);
-    } catch (err: any) {
-      notify.error(err.message || "Failed to send password reset email");
-    } finally {
-      setIsResettingPassword(false);
-    }
-  };
+
 
   // Avatar Background Color Helper
   const getRoleBadgeStyle = (roleName?: string | null) => {
@@ -953,7 +1024,7 @@ export function UsersPage() {
                   </CardHeader>
 
                   {/* Card Content */}
-                  <CardContent className="p-3.5 pt-0 space-y-2">
+                  <CardContent className="p-3.5 pt-0 space-y-2.5">
                     {/* User Email */}
                     <div className="min-w-0 flex-1">
                       <CardTitle
@@ -965,7 +1036,7 @@ export function UsersPage() {
                     </div>
 
                     {/* Role Badge */}
-                    <div className="pt-1">
+                    <div className="pt-0.5">
                       <Badge
                         variant="outline"
                         className={`text-[10px] h-4.5 px-2 gap-1 font-semibold ${getRoleBadgeStyle(
@@ -977,59 +1048,93 @@ export function UsersPage() {
                       </Badge>
                     </div>
 
+                    {/* Password Viewer */}
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-border/60">
+                      <span className="text-[11px] text-muted-foreground font-medium">
+                        Password
+                      </span>
+                      <PasswordViewerCell password={userItem.password} />
+                    </div>
+
                     {/* Hierarchy Scopes */}
-                    <div className="space-y-1.5 pt-2 border-t border-border/60 text-xs text-muted-foreground">
-                      {regionName && (
-                        <div className="flex items-center gap-1.5">
-                          <Compass className="h-3 w-3 text-primary shrink-0" />
-                          <span
-                            className="truncate font-medium text-foreground text-[11px]"
-                            title={regionName}
-                          >
-                            {regionName}
-                          </span>
-                        </div>
-                      )}
-
-                      {depotName && (
-                        <div className="flex items-center gap-1.5">
-                          <Warehouse className="h-3 w-3 text-muted-foreground shrink-0" />
-                          <span
-                            className="truncate text-[11px]"
-                            title={depotName}
-                          >
-                            {depotName}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Route Access Badges */}
-                      <div className="flex items-center gap-1 pt-0.5">
-                        {userItem.v1_routes && (
-                          <Badge
-                            variant="secondary"
-                            className="text-[9px] h-4 px-1 gap-0.5 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                          >
-                            <Tag className="h-2 w-2" />
-                            <span>V1</span>
-                          </Badge>
+                    {(regionName || depotName) && (
+                      <div className="space-y-1.5 pt-1 border-t border-border/60 text-xs text-muted-foreground">
+                        {regionName && (
+                          <div className="flex items-center gap-1.5">
+                            <Compass className="h-3 w-3 text-primary shrink-0" />
+                            <span
+                              className="truncate font-medium text-foreground text-[11px]"
+                              title={regionName}
+                            >
+                              {regionName}
+                            </span>
+                          </div>
                         )}
-                        {userItem.v2_routes && (
-                          <Badge
-                            variant="default"
-                            className="text-[9px] h-4 px-1 gap-0.5"
-                          >
-                            <Layers className="h-2 w-2" />
-                            <span>V2</span>
-                          </Badge>
+
+                        {depotName && (
+                          <div className="flex items-center gap-1.5">
+                            <Warehouse className="h-3 w-3 text-muted-foreground shrink-0" />
+                            <span
+                              className="truncate text-[11px]"
+                              title={depotName}
+                            >
+                              {depotName}
+                            </span>
+                          </div>
                         )}
                       </div>
+                    )}
+
+                    {/* Route Capabilities Badges */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                      {userItem.v1_routes && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] h-4.5 px-1.5 gap-1 bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 font-semibold"
+                        >
+                          <Tag className="h-2.5 w-2.5" />
+                          <span>V1 Engine</span>
+                        </Badge>
+                      )}
+                      {userItem.v2_routes && (
+                        <Badge
+                          variant="default"
+                          className="text-[10px] h-4.5 px-1.5 gap-1 font-semibold"
+                        >
+                          <Layers className="h-2.5 w-2.5" />
+                          <span>V2 Engine</span>
+                        </Badge>
+                      )}
+                      {(userItem as any).PIS && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                        >
+                          PIS
+                        </Badge>
+                      )}
+                      {(userItem as any).PAS && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                        >
+                          PAS
+                        </Badge>
+                      )}
+                      {(userItem as any).ITMS && (
+                        <Badge
+                          variant="outline"
+                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                        >
+                          ITMS
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Created Date */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground pt-1">
-                      <Calendar className="h-3 w-3 shrink-0 text-muted-foreground/70" />
-                      <span>Added {formatDate(userItem.created_at)}</span>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1">
+                      <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                      <span>Registered {formatDate(userItem.created_at)}</span>
                     </div>
                   </CardContent>
                 </div>
@@ -1080,7 +1185,7 @@ export function UsersPage() {
         }}
         disablePointerDismissal={true}
       >
-        <DialogContent className="sm:max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-3 border-b border-border">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -1096,428 +1201,604 @@ export function UsersPage() {
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
                   {editingUser
-                    ? "Modify staff permissions, assigned terminal, and route access."
+                    ? "Modify staff credentials, hierarchy terminal, and transit modules."
                     : `Provision a new staff account under ${activeOrgName}.`}
                 </DialogDescription>
               </div>
             </div>
+
+            {/* Stepper Wizard Bar */}
+            <div className="grid grid-cols-2 gap-2 pt-3">
+              {steps.map((step) => {
+                const Icon = step.icon;
+                const isPassed = step.num < currentStep;
+                const isCurrent = step.num === currentStep;
+                return (
+                  <div
+                    key={step.num}
+                    className={cn(
+                      "flex flex-col items-center gap-1 pb-1.5 border-b-2 text-center transition-all",
+                      isCurrent
+                        ? "border-primary text-primary font-semibold"
+                        : isPassed
+                        ? "border-emerald-600 text-emerald-600"
+                        : "border-border text-muted-foreground opacity-60"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs">
+                      {isPassed ? (
+                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      ) : (
+                        <Icon className="h-3.5 w-3.5" />
+                      )}
+                      <span className="text-[11px] font-medium">
+                        {step.title}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </DialogHeader>
 
           <form onSubmit={handleFormSubmit} className="space-y-4 py-2">
-            {/* Email Input */}
-            <div className="space-y-1.5">
-              <Label htmlFor="user-email" className="text-xs font-semibold">
-                Staff Email *
-              </Label>
-              <Input
-                id="user-email"
-                type="email"
-                value={formEmail}
-                onChange={(e) => {
-                  setFormEmail(e.target.value);
-                  if (formEmailError) setFormEmailError("");
-                }}
-                disabled={Boolean(editingUser)}
-                placeholder="staff@transport.org"
-                className={cn(
-                  "h-9 text-xs",
-                  formEmailError &&
-                    "border-destructive focus-visible:ring-destructive/20"
-                )}
-                autoFocus={!editingUser}
-              />
-              {formEmailError && (
-                <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span>{formEmailError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Password Input (Create Mode Only) */}
-            {!editingUser ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="user-password" className="text-xs font-semibold">
-                  Temporary Password *
-                </Label>
-                <div className="relative">
+            {/* Step 1: Staff Account Details */}
+            {currentStep === 1 && (
+              <div className="space-y-4">
+                {/* Email Input */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="user-email" className="text-xs font-semibold">
+                    Staff Email *
+                  </Label>
                   <Input
-                    id="user-password"
-                    type={showPassword ? "text" : "password"}
-                    value={formPassword}
+                    id="user-email"
+                    type="email"
+                    value={formEmail}
                     onChange={(e) => {
-                      setFormPassword(e.target.value);
-                      if (formPasswordError) setFormPasswordError("");
+                      setFormEmail(e.target.value);
+                      if (formEmailError) setFormEmailError("");
                     }}
-                    placeholder="Min 8 chars with uppercase, lowercase, number & special char"
+                    disabled={Boolean(editingUser)}
+                    placeholder="staff@transport.org"
                     className={cn(
-                      "h-9 text-xs pr-9",
-                      formPasswordError &&
+                      "h-9 text-xs",
+                      formEmailError &&
                         "border-destructive focus-visible:ring-destructive/20"
                     )}
+                    autoFocus={!editingUser}
                   />
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    title={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
+                  <FieldErrorText message={formEmailError} />
                 </div>
-                {formPasswordError && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                    <AlertCircle className="h-3 w-3 shrink-0" />
-                    <span>{formPasswordError}</span>
-                  </p>
-                )}
-              </div>
-            ) : (
-              /* Password Reset Section in Edit Mode */
-              <div className="space-y-3 rounded-lg bg-muted/40 p-3 border border-border">
-                {isSuper && (
+
+                {/* Password Input (Editable in both Create & Edit) */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="user-password" className="text-xs font-semibold">
+                    {editingUser ? "Password (Editable)" : "Account Password *"}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="user-password"
+                      type={showPassword ? "text" : "password"}
+                      value={formPassword}
+                      onChange={(e) => {
+                        setFormPassword(e.target.value);
+                        if (formPasswordError) setFormPasswordError("");
+                      }}
+                      placeholder={
+                        editingUser
+                          ? "Enter new password or leave current"
+                          : "Min 8 chars with uppercase, lowercase, number & special char"
+                      }
+                      className={cn(
+                        "h-9 text-xs pr-9",
+                        formPasswordError &&
+                          "border-destructive focus-visible:ring-destructive/20"
+                      )}
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  <FieldErrorText message={formPasswordError} />
+                </div>
+
+                {/* Role Select */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Staff Role *</Label>
+                  <Select
+                    value={formRoleId}
+                    onValueChange={(val) => {
+                      setFormRoleId(val ?? "");
+                      if (formRoleError) setFormRoleError("");
+                      const selected = allRoles.find((r) => r.id === val)?.name?.toLowerCase();
+                      if (
+                        selected !== "region_admin" &&
+                        selected !== "area_admin" &&
+                        selected !== "depot_admin"
+                      ) {
+                        setFormRegionId("");
+                        setFormDepotId("");
+                      } else if (selected === "region_admin" || selected === "area_admin") {
+                        setFormDepotId("");
+                      }
+                    }}
+                    items={assignableRoles.map((r) => ({
+                      label: getRoleLabel(r.name),
+                      value: r.id,
+                    }))}
+                  >
+                    <SelectTrigger
+                      className={cn(
+                        "h-9 text-xs w-full",
+                        formRoleError &&
+                          "border-destructive focus-visible:ring-destructive/20"
+                      )}
+                    >
+                      <SelectValue placeholder="Select staff role..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {assignableRoles.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {getRoleLabel(r.name)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldErrorText message={formRoleError} />
+                </div>
+
+                {/* Region Select (Visible when Region Admin or Depot Admin selected) */}
+                {requiresRegion && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="edit-user-password" className="text-xs font-semibold">
-                      Reset Password Directly (Optional)
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="edit-user-password"
-                        type={showPassword ? "text" : "password"}
-                        value={formPassword}
-                        onChange={(e) => {
-                          setFormPassword(e.target.value);
-                          if (formPasswordError) setFormPasswordError("");
-                        }}
-                        placeholder="Enter new password (optional)"
+                    <Label className="text-xs font-semibold">Assigned Region *</Label>
+                    <Select
+                      value={formRegionId}
+                      onValueChange={(val) => {
+                        setFormRegionId(val ?? "");
+                        setFormDepotId("");
+                        if (formRegionError) setFormRegionError("");
+                      }}
+                      items={regions.map((r) => ({
+                        label: r.name,
+                        value: r.id,
+                      }))}
+                    >
+                      <SelectTrigger
                         className={cn(
-                          "h-9 text-xs pr-9 bg-background",
-                          formPasswordError &&
+                          "h-9 text-xs w-full",
+                          formRegionError &&
                             "border-destructive focus-visible:ring-destructive/20"
                         )}
-                      />
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                        onClick={() => setShowPassword((prev) => !prev)}
-                        title={showPassword ? "Hide password" : "Show password"}
                       >
-                        {showPassword ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
+                        <SelectValue placeholder="Select region...">
+                          {(val: string | null) => {
+                            if (!val) return null;
+                            const match = regions.find((r) => r.id === val);
+                            return match ? match.name : val;
+                          }}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {regions.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FieldErrorText message={formRegionError} />
+                  </div>
+                )}
+
+                {/* Depot Select (Visible when Depot Admin selected) */}
+                {requiresDepot && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Assigned Depot *</Label>
+                    <Select
+                      value={formDepotId}
+                      onValueChange={(val) => {
+                        setFormDepotId(val ?? "");
+                        if (formDepotError) setFormDepotError("");
+                      }}
+                      items={depots.map((d) => ({
+                        label: d.name,
+                        value: d.id,
+                      }))}
+                      disabled={!formRegionId || depots.length === 0}
+                    >
+                      <SelectTrigger
+                        className={cn(
+                          "h-9 text-xs w-full",
+                          formDepotError &&
+                            "border-destructive focus-visible:ring-destructive/20"
                         )}
-                      </button>
+                      >
+                        <SelectValue placeholder="Select depot...">
+                          {(val: string | null) => {
+                            if (!val) return null;
+                            const match = depots.find((d) => d.id === val);
+                            return match ? match.name : val;
+                          }}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {depots.map((d) => (
+                          <SelectItem key={d.id} value={d.id}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FieldErrorText message={formDepotError} />
+                    {formRegionId && depots.length === 0 && (
+                      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-2 mt-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <span>No depots found in this region</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Active Switch */}
+                <div className="flex items-center justify-between rounded-lg border border-border/80 p-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-semibold">Account Status</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Allow this staff member to sign in to the platform.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formActive}
+                    onCheckedChange={setFormActive}
+                    className="data-checked:bg-emerald-600"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Transit Modules & Capabilities */}
+            {currentStep === 2 && (
+              <div className="space-y-4">
+                {/* Section Header */}
+                <div>
+                  <span className="text-xs font-semibold text-foreground block">
+                    Intelligent Transit Modules
+                  </span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Enable onboard hardware systems, telematics, and announcement technologies.
+                  </p>
+                </div>
+
+                {/* Modules Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-0.5">
+                  {/* Card 1: PIS */}
+                  <div
+                    role="checkbox"
+                    aria-checked={formPIS}
+                    tabIndex={0}
+                    onClick={() => {
+                      const nextPIS = !formPIS;
+                      setFormPIS(nextPIS);
+                      if (nextPIS && !formV1 && !formV2) {
+                        setFormV2(true);
+                      }
+                      setFormRouteEngineError("");
+                      if (formModuleError) setFormModuleError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        const nextPIS = !formPIS;
+                        setFormPIS(nextPIS);
+                        if (nextPIS && !formV1 && !formV2) {
+                          setFormV2(true);
+                        }
+                        setFormRouteEngineError("");
+                        if (formModuleError) setFormModuleError("");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      formPIS
+                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Radio className="h-4 w-4 text-blue-600 shrink-0" />
+                        <span>PIS Displays</span>
+                      </div>
+                      <Checkbox
+                        checked={formPIS}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
                     </div>
-                    {formPasswordError && (
-                      <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                        <AlertCircle className="h-3 w-3 shrink-0" />
-                        <span>{formPasswordError}</span>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Passenger Information System & destination LED signs
+                    </p>
+                  </div>
+
+                  {/* Card 2: PAS */}
+                  <div
+                    role="checkbox"
+                    aria-checked={formPAS}
+                    tabIndex={0}
+                    onClick={() => {
+                      setFormPAS(!formPAS);
+                      if (formModuleError) setFormModuleError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setFormPAS(!formPAS);
+                        if (formModuleError) setFormModuleError("");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      formPAS
+                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Volume2 className="h-4 w-4 text-indigo-600 shrink-0" />
+                        <span>PAS Audio</span>
+                      </div>
+                      <Checkbox
+                        checked={formPAS}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Synthesized speech announcements & stop arrival chimes
+                    </p>
+                  </div>
+
+                  {/* Card 3: ITMS */}
+                  <div
+                    role="checkbox"
+                    aria-checked={formITMS}
+                    tabIndex={0}
+                    onClick={() => {
+                      setFormITMS(!formITMS);
+                      if (formModuleError) setFormModuleError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setFormITMS(!formITMS);
+                        if (formModuleError) setFormModuleError("");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      formITMS
+                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Cpu className="h-4 w-4 text-cyan-600 shrink-0" />
+                        <span>ITMS Telematics</span>
+                      </div>
+                      <Checkbox
+                        checked={formITMS}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Real-time GPS telemetry & schedule compliance tracking
+                    </p>
+                  </div>
+                </div>
+
+                <FieldErrorText message={formModuleError} />
+
+                {/* Section 2: PIS Route Display Engines (shown when PIS enabled) */}
+                {formPIS && (
+                  <div className="space-y-3 pt-3 border-t border-border/80 animate-in fade-in-50 duration-200">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground block">
+                          PIS Route Display Engines *
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          PIS Sub-Features
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Select supported route format engines for LED destination boards (select V1, V2, or both).
                       </p>
-                    )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                      {/* Card: V2 Route Engine */}
+                      <div
+                        role="checkbox"
+                        aria-checked={formV2}
+                        tabIndex={0}
+                        onClick={() => {
+                          const nextV2 = !formV2;
+                          setFormV2(nextV2);
+                          if (nextV2 || formV1) {
+                            setFormRouteEngineError("");
+                          } else {
+                            setFormRouteEngineError(
+                              "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                            );
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            const nextV2 = !formV2;
+                            setFormV2(nextV2);
+                            if (nextV2 || formV1) {
+                              setFormRouteEngineError("");
+                            } else {
+                              setFormRouteEngineError(
+                                "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                              );
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                          formV2
+                            ? "border-emerald-500/70 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
+                            : formRouteEngineError
+                            ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
+                            : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                            <Sliders className="h-4 w-4 text-emerald-600 shrink-0" />
+                            <span>V2 Route Engine (Modern)</span>
+                          </div>
+                          <Checkbox
+                            checked={formV2}
+                            tabIndex={-1}
+                            className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                          Multi-slide bilingual layouts & split-screen Unicode Kannada
+                        </p>
+                      </div>
+
+                      {/* Card: V1 Route Legacy */}
+                      <div
+                        role="checkbox"
+                        aria-checked={formV1}
+                        tabIndex={0}
+                        onClick={() => {
+                          const nextV1 = !formV1;
+                          setFormV1(nextV1);
+                          if (nextV1 || formV2) {
+                            setFormRouteEngineError("");
+                          } else {
+                            setFormRouteEngineError(
+                              "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                            );
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            const nextV1 = !formV1;
+                            setFormV1(nextV1);
+                            if (nextV1 || formV2) {
+                              setFormRouteEngineError("");
+                            } else {
+                              setFormRouteEngineError(
+                                "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                              );
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                          formV1
+                            ? "border-amber-500/70 bg-amber-500/5 text-foreground ring-1 ring-amber-500/20 shadow-2xs"
+                            : formRouteEngineError
+                            ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
+                            : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                            <Tag className="h-4 w-4 text-amber-600 shrink-0" />
+                            <span>V1 Route Engine (Legacy)</span>
+                          </div>
+                          <Checkbox
+                            checked={formV1}
+                            tabIndex={-1}
+                            className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                          Single destination scroll binary format (Firmware 1.x)
+                        </p>
+                      </div>
+                    </div>
+
+                    <FieldErrorText message={formRouteEngineError} />
                   </div>
                 )}
-
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
-                  <div>
-                    <span className="text-xs font-semibold text-foreground block">
-                      Send Password Reset Link
-                    </span>
-                    <span className="text-[11px] text-muted-foreground block">
-                      Sends instructions to {formEmail || "user"}
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleTriggerPasswordReset(formEmail)}
-                    disabled={isResettingPassword}
-                    className="h-7 text-xs gap-1 font-medium shrink-0"
-                  >
-                    <KeyRound className="h-3 w-3" />
-                    <span>
-                      {isResettingPassword ? "Sending..." : "Send Reset Link"}
-                    </span>
-                  </Button>
-                </div>
               </div>
             )}
 
-            {/* Role Select */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Staff Role *</Label>
-              <Select
-                value={formRoleId}
-                onValueChange={(val) => {
-                  setFormRoleId(val ?? "");
-                  if (formRoleError) setFormRoleError("");
-                  const selected = allRoles.find((r) => r.id === val)?.name?.toLowerCase();
-                  if (
-                    selected !== "region_admin" &&
-                    selected !== "area_admin" &&
-                    selected !== "depot_admin"
-                  ) {
-                    setFormRegionId("");
-                    setFormDepotId("");
-                  } else if (selected === "region_admin" || selected === "area_admin") {
-                    setFormDepotId("");
-                  }
-                }}
-                items={assignableRoles.map((r) => ({
-                  label: getRoleLabel(r.name),
-                  value: r.id,
-                }))}
-              >
-                <SelectTrigger
-                  className={cn(
-                    "h-9 text-xs w-full",
-                    formRoleError &&
-                      "border-destructive focus-visible:ring-destructive/20"
+            {/* Stepper Footer Buttons */}
+            {currentStep === 1 ? (
+              <DialogFooter className="flex items-center justify-end sm:justify-end pt-4 border-t border-border">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleNext}
+                  disabled={isSubmitting || isCheckingStep}
+                  className="text-xs font-semibold gap-1"
+                >
+                  {isCheckingStep ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Checking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Continue</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </>
                   )}
+                </Button>
+              </DialogFooter>
+            ) : (
+              <DialogFooter className="flex items-center justify-between sm:justify-between pt-4 border-t border-border">
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={handleBack}
+                  disabled={isSubmitting}
+                  className="text-xs font-semibold gap-1"
                 >
-                  <SelectValue placeholder="Select staff role..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {assignableRoles.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {getRoleLabel(r.name)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {formRoleError && (
-                <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span>{formRoleError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Region Select (Visible when Region Admin or Depot Admin selected) */}
-            {requiresRegion && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Assigned Region *</Label>
-                <Select
-                  value={formRegionId}
-                  onValueChange={(val) => {
-                    setFormRegionId(val ?? "");
-                    setFormDepotId("");
-                    if (formRegionError) setFormRegionError("");
-                  }}
-                  items={regions.map((r) => ({
-                    label: r.name,
-                    value: r.id,
-                  }))}
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Back</span>
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSubmitting}
+                  className="text-xs font-semibold gap-1.5"
                 >
-                  <SelectTrigger
-                    className={cn(
-                      "h-9 text-xs w-full",
-                      formRegionError &&
-                        "border-destructive focus-visible:ring-destructive/20"
-                    )}
-                  >
-                    <SelectValue placeholder="Select region...">
-                      {(val: string | null) => {
-                        if (!val) return null;
-                        const match = regions.find((r) => r.id === val);
-                        return match ? match.name : val;
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {regions.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formRegionError && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                    <AlertCircle className="h-3 w-3 shrink-0" />
-                    <span>{formRegionError}</span>
-                  </p>
-                )}
-              </div>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>{editingUser ? "Save Changes" : "Create User"}</span>
+                  )}
+                </Button>
+              </DialogFooter>
             )}
-
-            {/* Depot Select (Visible when Depot Admin selected) */}
-            {requiresDepot && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Assigned Depot *</Label>
-                <Select
-                  value={formDepotId}
-                  onValueChange={(val) => {
-                    setFormDepotId(val ?? "");
-                    if (formDepotError) setFormDepotError("");
-                  }}
-                  items={depots.map((d) => ({
-                    label: d.name,
-                    value: d.id,
-                  }))}
-                  disabled={!formRegionId || depots.length === 0}
-                >
-                  <SelectTrigger
-                    className={cn(
-                      "h-9 text-xs w-full",
-                      formDepotError &&
-                        "border-destructive focus-visible:ring-destructive/20"
-                    )}
-                  >
-                    <SelectValue placeholder="Select depot...">
-                      {(val: string | null) => {
-                        if (!val) return null;
-                        const match = depots.find((d) => d.id === val);
-                        return match ? match.name : val;
-                      }}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {depots.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formDepotError && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                    <AlertCircle className="h-3 w-3 shrink-0" />
-                    <span>{formDepotError}</span>
-                  </p>
-                )}
-                {formRegionId && depots.length === 0 && (
-                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-2 mt-1.5">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                    <span>No depots found in this region</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Active Switch */}
-            <div className="flex items-center justify-between rounded-lg border border-border/80 p-3">
-              <div className="space-y-0.5">
-                <Label className="text-xs font-semibold">Account Status</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Allow this staff member to sign in to the platform.
-                </p>
-              </div>
-              <Switch
-                checked={formActive}
-                onCheckedChange={setFormActive}
-                className="data-checked:bg-emerald-600"
-              />
-            </div>
-
-            {/* Route Format Engine Switches */}
-            <div className="space-y-2 pt-1">
-              <Label className="text-xs font-semibold block">
-                Allowed Route Engines
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <Tag className="h-3.5 w-3.5 text-amber-600" />
-                    <span className="text-xs font-medium">V1 Engine</span>
-                  </div>
-                  <Switch
-                    checked={formV1}
-                    onCheckedChange={(checked) => {
-                      setFormV1(checked);
-                      if (checked || formV2 || !formPIS) setFormRouteEngineError("");
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <Layers className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-medium">V2 Engine</span>
-                  </div>
-                  <Switch
-                    checked={formV2}
-                    onCheckedChange={(checked) => {
-                      setFormV2(checked);
-                      if (checked || formV1 || !formPIS) setFormRouteEngineError("");
-                    }}
-                  />
-                </div>
-              </div>
-              {formRouteEngineError && (
-                <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span>{formRouteEngineError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Module Features (PIS, PAS, ITMS) */}
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold block">
-                  Module Features
-                </Label>
-                <span className="text-[10px] text-muted-foreground">
-                  (Inherited from {editingUser?.organization?.name || activeOrg?.name || "Organization"})
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                  <span className="text-xs font-medium">PIS</span>
-                  <Switch
-                    size="sm"
-                    checked={formPIS}
-                    onCheckedChange={(checked) => {
-                      setFormPIS(checked);
-                      if (!checked || formV1 || formV2) setFormRouteEngineError("");
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                  <span className="text-xs font-medium">PAS</span>
-                  <Switch size="sm" checked={formPAS} onCheckedChange={setFormPAS} />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                  <span className="text-xs font-medium">ITMS</span>
-                  <Switch size="sm" checked={formITMS} onCheckedChange={setFormITMS} />
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsFormOpen(false)}
-                disabled={isSubmitting}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isSubmitting}
-                className="text-xs font-semibold gap-1.5"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <span>{editingUser ? "Save Changes" : "Create User"}</span>
-                )}
-              </Button>
-            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -1560,17 +1841,7 @@ export function UsersPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingUser(null)}
-              disabled={isDeleting}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"
@@ -1655,17 +1926,7 @@ export function UsersPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setStatusPromptUser(null)}
-              disabled={isUpdatingStatus}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               size="sm"
               onClick={handleConfirmStatusToggle}

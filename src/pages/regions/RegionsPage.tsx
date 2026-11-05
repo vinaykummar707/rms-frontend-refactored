@@ -564,17 +564,7 @@ export function RegionsPage() {
               )}
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsCreateOpen(false)}
-                disabled={isCreating}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
+            <DialogFooter className="pt-3 border-t border-border">
               <Button
                 type="submit"
                 size="sm"
@@ -657,17 +647,7 @@ export function RegionsPage() {
                 )}
               </div>
 
-              <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingRegion(null)}
-                  disabled={isUpdating}
-                  className="text-xs"
-                >
-                  Cancel
-                </Button>
+              <DialogFooter className="pt-3 border-t border-border">
                 <Button
                   type="submit"
                   size="sm"
@@ -726,17 +706,7 @@ export function RegionsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingRegion(null)}
-              disabled={isDeleting}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"

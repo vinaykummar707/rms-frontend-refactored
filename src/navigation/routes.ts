@@ -20,6 +20,7 @@ export const ROUTES = {
   ROUTES: "/home/routes",
   ROUTE_CONFIGURATION: "/home/route-configuration",
   STOPS: "/home/stops",
+  PREMADE_AUDIOS: "/home/premade-audios",
   SETTINGS: "/home/settings",
   UTILITY: "/home/utility",
   FONT_CONFIGURATION: "/home/font-configuration",

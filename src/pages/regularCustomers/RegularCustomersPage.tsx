@@ -3,12 +3,11 @@ import { cn } from "cn";
 import { supabase, supabaseAuthHelper } from "@/integrations/supabase/client";
 import { loggedUserCrud } from "@/features/users/api/userCrud";
 import { roleCrud } from "@/features/users/api/roleCrud";
-import { sendUserPasswordReset } from "@/features/users/services/userService";
 import { useAuthStore } from "@/core/auth/authStore";
 import { formatDate, sortByLatestCreated } from "@/shared/utils/dateUtils";
 import { notify } from "@/core/notifications/notificationService";
-import { isSuperAdmin } from "@/core/authorization/customerTier";
 import type { ILoggedUser } from "@/shared/types/user";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardHeader,
@@ -49,14 +48,32 @@ import {
   X,
   UserCheck,
   CheckCircle2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Radio,
+  Sliders,
+  Volume2,
+  Cpu,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 const REGULAR_ROLE_ID = "fd72d0e0-831e-494c-96a5-3e153ab3e2db";
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
+function FieldErrorText({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
+      <AlertCircle className="h-3 w-3 shrink-0" />
+      <span>{message}</span>
+    </p>
+  );
+}
+
 export function RegularCustomersPage() {
   const loggedInUser = useAuthStore((state) => state.user);
-  const isSuper = isSuperAdmin(loggedInUser);
 
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState("");
@@ -64,10 +81,10 @@ export function RegularCustomersPage() {
 
   // Dialog States
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [editingCustomer, setEditingCustomer] = useState<ILoggedUser | null>(null);
   const [deletingCustomer, setDeletingCustomer] = useState<ILoggedUser | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // Status Suspension Dialog State
   const [statusPromptCustomer, setStatusPromptCustomer] = useState<{
@@ -81,14 +98,22 @@ export function RegularCustomersPage() {
   const [formEmailError, setFormEmailError] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formPasswordError, setFormPasswordError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [formActive, setFormActive] = useState(true);
   const [formV1, setFormV1] = useState(false);
-  const [formV2, setFormV2] = useState(true);
-  const [formPIS, setFormPIS] = useState(true);
+  const [formV2, setFormV2] = useState(false);
+  const [formPIS, setFormPIS] = useState(false);
   const [formPAS, setFormPAS] = useState(false);
   const [formITMS, setFormITMS] = useState(false);
   const [formRouteEngineError, setFormRouteEngineError] = useState("");
+  const [formModuleError, setFormModuleError] = useState("");
+  const [isCheckingStep, setIsCheckingStep] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const steps = [
+    { num: 1, title: "Customer Details", icon: KeyRound },
+    { num: 2, title: "Transit Modules", icon: Sliders },
+  ];
 
   // Query Regular Customers
   const { useList } = loggedUserCrud;
@@ -165,41 +190,45 @@ export function RegularCustomersPage() {
   // Open Create Modal
   const handleOpenCreate = () => {
     setEditingCustomer(null);
+    setCurrentStep(1);
     setFormEmail("");
     setFormEmailError("");
     setFormPassword("");
     setFormPasswordError("");
+    setShowPassword(false);
     setFormActive(true);
     setFormV1(false);
-    setFormV2(true);
-    setFormPIS(true);
+    setFormV2(false);
+    setFormPIS(false);
     setFormPAS(false);
     setFormITMS(false);
     setFormRouteEngineError("");
+    setFormModuleError("");
     setIsFormOpen(true);
   };
 
   // Open Edit Modal
   const handleOpenEdit = (customer: ILoggedUser) => {
     setEditingCustomer(customer);
+    setCurrentStep(1);
     setFormEmail(customer.email || "");
     setFormEmailError("");
-    setFormPassword("");
+    setFormPassword(customer.password || "");
     setFormPasswordError("");
+    setShowPassword(false);
     setFormActive(Boolean(customer.active));
     setFormV1(Boolean(customer.v1_routes));
-    setFormV2(customer.v2_routes !== false);
-    setFormPIS(Boolean((customer as any).PIS ?? true));
-    setFormPAS(Boolean((customer as any).PAS ?? false));
-    setFormITMS(Boolean((customer as any).ITMS ?? false));
+    setFormV2(Boolean(customer.v2_routes));
+    setFormPIS(Boolean((customer as any).PIS));
+    setFormPAS(Boolean((customer as any).PAS));
+    setFormITMS(Boolean((customer as any).ITMS));
     setFormRouteEngineError("");
+    setFormModuleError("");
     setIsFormOpen(true);
   };
 
-  // Form Submit Handler
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  // Wizard Step Navigation
+  const handleNext = async () => {
     let hasError = false;
     const trimmedEmail = formEmail.trim();
 
@@ -209,6 +238,8 @@ export function RegularCustomersPage() {
     } else if (!EMAIL_REGEX.test(trimmedEmail)) {
       setFormEmailError("Enter a valid email address.");
       hasError = true;
+    } else {
+      setFormEmailError("");
     }
 
     if (!editingCustomer) {
@@ -218,21 +249,79 @@ export function RegularCustomersPage() {
       } else if (formPassword.length < 6) {
         setFormPasswordError("Password must be at least 6 characters.");
         hasError = true;
+      } else {
+        setFormPasswordError("");
       }
+    } else {
+      if (!formPassword || formPassword.trim().length === 0) {
+        setFormPasswordError("Password is required.");
+        hasError = true;
+      } else if (formPassword.length < 6) {
+        setFormPasswordError("Password must be at least 6 characters.");
+        hasError = true;
+      } else {
+        setFormPasswordError("");
+      }
+    }
+
+    if (hasError) return;
+
+    // Check if customer email already exists in Supabase users table (Step 1 error check)
+    if (!editingCustomer) {
+      try {
+        setIsCheckingStep(true);
+        const { data: existingUser } = await supabase
+          .from("users")
+          .select("id")
+          .eq("email", trimmedEmail)
+          .maybeSingle();
+
+        if (existingUser) {
+          setFormEmailError("A customer with this email address already exists.");
+          return;
+        }
+      } catch (err: any) {
+        console.warn("Customer email check error:", err);
+      } finally {
+        setIsCheckingStep(false);
+      }
+    }
+
+    setCurrentStep(2);
+  };
+
+  const handleBack = () => {
+    setFormRouteEngineError("");
+    setFormModuleError("");
+    setCurrentStep(1);
+  };
+
+  // Form Submit Handler
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (currentStep === 1) {
+      await handleNext();
+      return;
+    }
+
+    const trimmedEmail = formEmail.trim();
+
+    // Validation: At least one module must be selected
+    if (!formPIS && !formPAS && !formITMS) {
+      setFormModuleError(
+        "At least one intelligent transit module (PIS, PAS, or ITMS) must be enabled."
+      );
+      return;
     }
 
     // Validation: If PIS is enabled, at least 1 route engine (V1 or V2) must be selected
     if (formPIS && !formV1 && !formV2) {
       setFormRouteEngineError(
-        "At least one route engine (V1 or V2) must be selected when PIS is enabled."
+        "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
       );
-      notify.error(
-        "At least one route engine (V1 or V2) must be selected when PIS is enabled."
-      );
-      hasError = true;
+      return;
     }
-
-    if (hasError) return;
 
     const roleId = regularRole?.id || REGULAR_ROLE_ID;
 
@@ -256,7 +345,7 @@ export function RegularCustomersPage() {
       if (editingCustomer) {
         // UPDATE MODE
         const updatePayload: Record<string, any> = { ...basePayload };
-        if (isSuper && formPassword && formPassword.trim().length > 0) {
+        if (formPassword && formPassword.trim().length > 0) {
           updatePayload.password = formPassword.trim();
         }
 
@@ -292,8 +381,8 @@ export function RegularCustomersPage() {
         .maybeSingle();
 
       if (existingUser) {
-        setFormEmailError("A user with this email address already exists.");
-        notify.error("A user with this email address already exists.");
+        setFormEmailError("A customer with this email address already exists.");
+        setCurrentStep(1);
         setIsSubmitting(false);
         return;
       }
@@ -446,18 +535,7 @@ export function RegularCustomersPage() {
     }
   };
 
-  // Reset Password Trigger
-  const handleTriggerPasswordReset = async (email: string) => {
-    try {
-      setIsResettingPassword(true);
-      await sendUserPasswordReset(email);
-      notify.success(`Password reset email sent to ${email}`);
-    } catch (err: any) {
-      notify.error(err.message || "Failed to send password reset email");
-    } finally {
-      setIsResettingPassword(false);
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -783,7 +861,7 @@ export function RegularCustomersPage() {
         }}
         disablePointerDismissal={true}
       >
-        <DialogContent className="sm:max-w-md p-6">
+        <DialogContent className="sm:max-w-2xl p-6">
           <DialogHeader className="pb-3 border-b border-border">
             <div className="flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -801,221 +879,474 @@ export function RegularCustomersPage() {
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
                   {editingCustomer
-                    ? "Update account permissions and format access."
+                    ? "Update account credentials and module access."
                     : "Provision a new standalone commercial customer account."}
                 </DialogDescription>
               </div>
             </div>
+
+            {/* Stepper Wizard Bar */}
+            <div className="grid grid-cols-2 gap-2 pt-3">
+              {steps.map((step) => {
+                const Icon = step.icon;
+                const isPassed = step.num < currentStep;
+                const isCurrent = step.num === currentStep;
+                return (
+                  <div
+                    key={step.num}
+                    className={cn(
+                      "flex flex-col items-center gap-1 pb-1.5 border-b-2 text-center transition-all",
+                      isCurrent
+                        ? "border-primary text-primary font-semibold"
+                        : isPassed
+                        ? "border-emerald-600 text-emerald-600"
+                        : "border-border text-muted-foreground opacity-60"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5 text-xs">
+                      {isPassed ? (
+                        <Check className="h-3.5 w-3.5 stroke-[3]" />
+                      ) : (
+                        <Icon className="h-3.5 w-3.5" />
+                      )}
+                      <span className="text-[11px] font-medium">
+                        {step.title}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </DialogHeader>
 
           <form onSubmit={handleFormSubmit} className="space-y-4 py-2">
-            {/* Email Input */}
-            <div className="space-y-1.5">
-              <Label htmlFor="customer-email" className="text-xs font-semibold">
-                Customer Email *
-              </Label>
-              <Input
-                id="customer-email"
-                type="email"
-                value={formEmail}
-                onChange={(e) => {
-                  setFormEmail(e.target.value);
-                  if (formEmailError) setFormEmailError("");
-                }}
-                disabled={Boolean(editingCustomer)}
-                placeholder="customer@company.com"
-                className={cn(
-                  "h-9 text-xs",
-                  formEmailError &&
-                    "border-destructive focus-visible:ring-destructive/20"
-                )}
-                autoFocus={!editingCustomer}
-              />
-              {formEmailError && (
-                <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span>{formEmailError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Password Input (Create Mode Only) */}
-            {!editingCustomer ? (
-              <div className="space-y-1.5">
-                <Label
-                  htmlFor="customer-password"
-                  className="text-xs font-semibold"
-                >
-                  Account Password *
-                </Label>
-                <Input
-                  id="customer-password"
-                  type="password"
-                  value={formPassword}
-                  onChange={(e) => {
-                    setFormPassword(e.target.value);
-                    if (formPasswordError) setFormPasswordError("");
-                  }}
-                  placeholder="Minimum 6 characters"
-                  className={cn(
-                    "h-9 text-xs",
-                    formPasswordError &&
-                      "border-destructive focus-visible:ring-destructive/20"
-                  )}
-                />
-                {formPasswordError && (
-                  <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                    <AlertCircle className="h-3 w-3 shrink-0" />
-                    <span>{formPasswordError}</span>
-                  </p>
-                )}
-              </div>
-            ) : (
-              /* Password Reset Action in Edit Mode */
-              <div className="rounded-lg bg-muted/50 p-3 border border-border flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-semibold text-foreground block">
-                    Password Reset
-                  </span>
-                  <span className="text-[11px] text-muted-foreground block">
-                    Send instructions to reset password.
-                  </span>
+            {/* Step 1: Customer Credentials & Details */}
+            {currentStep === 1 && (
+              <div className="space-y-4">
+                {/* Email Input */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="customer-email" className="text-xs font-semibold">
+                    Customer Email *
+                  </Label>
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={formEmail}
+                    onChange={(e) => {
+                      setFormEmail(e.target.value);
+                      if (formEmailError) setFormEmailError("");
+                    }}
+                    disabled={Boolean(editingCustomer)}
+                    placeholder="customer@company.com"
+                    className={cn(
+                      "h-9 text-xs",
+                      formEmailError &&
+                        "border-destructive focus-visible:ring-destructive/20"
+                    )}
+                    autoFocus={!editingCustomer}
+                  />
+                  <FieldErrorText message={formEmailError} />
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleTriggerPasswordReset(formEmail)}
-                  disabled={isResettingPassword}
-                  className="h-7 text-xs gap-1 font-medium"
-                >
-                  <KeyRound className="h-3 w-3" />
-                  <span>
-                    {isResettingPassword ? "Sending..." : "Send Reset Link"}
-                  </span>
-                </Button>
+
+                {/* Password Input (Editable in both Create & Edit) */}
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="customer-password"
+                    className="text-xs font-semibold"
+                  >
+                    {editingCustomer ? "Password (Editable)" : "Account Password *"}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="customer-password"
+                      type={showPassword ? "text" : "password"}
+                      value={formPassword}
+                      onChange={(e) => {
+                        setFormPassword(e.target.value);
+                        if (formPasswordError) setFormPasswordError("");
+                      }}
+                      placeholder={
+                        editingCustomer
+                          ? "Enter new password or leave current"
+                          : "Minimum 6 characters"
+                      }
+                      className={cn(
+                        "h-9 text-xs pr-9",
+                        formPasswordError &&
+                          "border-destructive focus-visible:ring-destructive/20"
+                      )}
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  <FieldErrorText message={formPasswordError} />
+                </div>
+
+                {/* Active Status */}
+                <div className="flex items-center justify-between rounded-lg border border-border/80 p-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-semibold">Account Status</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Allow this customer to log in and create routes.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formActive}
+                    onCheckedChange={setFormActive}
+                    className="data-checked:bg-emerald-600"
+                  />
+                </div>
               </div>
             )}
 
-            {/* Active Status */}
-            <div className="flex items-center justify-between rounded-lg border border-border/80 p-3">
-              <div className="space-y-0.5">
-                <Label className="text-xs font-semibold">Account Status</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Allow this customer to log in and create routes.
-                </p>
-              </div>
-              <Switch
-                checked={formActive}
-                onCheckedChange={setFormActive}
-                className="data-checked:bg-emerald-600"
-              />
-            </div>
-
-            {/* Route Format Permissions */}
-            <div className="space-y-2 pt-1">
-              <Label className="text-xs font-semibold block">
-                Allowed Route Engines
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <Tag className="h-3.5 w-3.5 text-amber-600" />
-                    <span className="text-xs font-medium">V1 Route Engine</span>
-                  </div>
-                  <Switch
-                    checked={formV1}
-                    onCheckedChange={(checked) => {
-                      setFormV1(checked);
-                      if (checked || formV2 || !formPIS) setFormRouteEngineError("");
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <Layers className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-xs font-medium">V2 Route Engine</span>
-                  </div>
-                  <Switch
-                    checked={formV2}
-                    onCheckedChange={(checked) => {
-                      setFormV2(checked);
-                      if (checked || formV1 || !formPIS) setFormRouteEngineError("");
-                    }}
-                  />
-                </div>
-              </div>
-              {formRouteEngineError && (
-                <p className="text-[11px] font-medium text-destructive mt-1 flex items-center gap-1 animate-in fade-in-50">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  <span>{formRouteEngineError}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Module Features */}
-            <div className="space-y-2 pt-1">
-              <Label className="text-xs font-semibold block">
-                Module Features
-              </Label>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                  <span className="text-xs font-medium">PIS</span>
-                  <Switch
-                    size="sm"
-                    checked={formPIS}
-                    onCheckedChange={(checked) => {
-                      setFormPIS(checked);
-                      if (!checked || formV1 || formV2) setFormRouteEngineError("");
-                    }}
-                  />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                  <span className="text-xs font-medium">PAS</span>
-                  <Switch size="sm" checked={formPAS} onCheckedChange={setFormPAS} />
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border p-2">
-                  <span className="text-xs font-medium">ITMS</span>
-                  <Switch
-                    size="sm"
-                    checked={formITMS}
-                    onCheckedChange={setFormITMS}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsFormOpen(false)}
-                disabled={isSubmitting}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isSubmitting}
-                className="text-xs font-semibold gap-1.5"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Saving...</span>
-                  </>
-                ) : (
-                  <span>
-                    {editingCustomer
-                      ? "Save Changes"
-                      : "Create Customer"}
+            {/* Step 2: Transit Capabilities & Modules */}
+            {currentStep === 2 && (
+              <div className="space-y-4">
+                {/* Section Header */}
+                <div>
+                  <span className="text-xs font-semibold text-foreground block">
+                    Intelligent Transit Modules
                   </span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Enable onboard hardware systems, telematics, and announcement technologies.
+                  </p>
+                </div>
+
+                {/* Modules Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-0.5">
+                  {/* Card 1: PIS */}
+                  <div
+                    role="checkbox"
+                    aria-checked={formPIS}
+                    tabIndex={0}
+                    onClick={() => {
+                      const nextPIS = !formPIS;
+                      setFormPIS(nextPIS);
+                      if (nextPIS && !formV1 && !formV2) {
+                        setFormV2(true);
+                      }
+                      setFormRouteEngineError("");
+                      if (formModuleError) setFormModuleError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        const nextPIS = !formPIS;
+                        setFormPIS(nextPIS);
+                        if (nextPIS && !formV1 && !formV2) {
+                          setFormV2(true);
+                        }
+                        setFormRouteEngineError("");
+                        if (formModuleError) setFormModuleError("");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      formPIS
+                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Radio className="h-4 w-4 text-blue-600 shrink-0" />
+                        <span>PIS Displays</span>
+                      </div>
+                      <Checkbox
+                        checked={formPIS}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Passenger Information System & destination LED signs
+                    </p>
+                  </div>
+
+                  {/* Card 2: PAS */}
+                  <div
+                    role="checkbox"
+                    aria-checked={formPAS}
+                    tabIndex={0}
+                    onClick={() => {
+                      setFormPAS(!formPAS);
+                      if (formModuleError) setFormModuleError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setFormPAS(!formPAS);
+                        if (formModuleError) setFormModuleError("");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      formPAS
+                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Volume2 className="h-4 w-4 text-indigo-600 shrink-0" />
+                        <span>PAS Audio</span>
+                      </div>
+                      <Checkbox
+                        checked={formPAS}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Synthesized speech announcements & stop arrival chimes
+                    </p>
+                  </div>
+
+                  {/* Card 3: ITMS */}
+                  <div
+                    role="checkbox"
+                    aria-checked={formITMS}
+                    tabIndex={0}
+                    onClick={() => {
+                      setFormITMS(!formITMS);
+                      if (formModuleError) setFormModuleError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.key === "Enter") {
+                        e.preventDefault();
+                        setFormITMS(!formITMS);
+                        if (formModuleError) setFormModuleError("");
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                      formITMS
+                        ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/20 shadow-2xs"
+                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                        <Cpu className="h-4 w-4 text-cyan-600 shrink-0" />
+                        <span>ITMS Telematics</span>
+                      </div>
+                      <Checkbox
+                        checked={formITMS}
+                        tabIndex={-1}
+                        className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                      Real-time GPS telemetry & schedule compliance tracking
+                    </p>
+                  </div>
+                </div>
+
+                <FieldErrorText message={formModuleError} />
+
+                {/* Section 2: PIS Route Display Engines (shown when PIS enabled) */}
+                {formPIS && (
+                  <div className="space-y-3 pt-3 border-t border-border/80 animate-in fade-in-50 duration-200">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-foreground block">
+                          PIS Route Display Engines *
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          PIS Sub-Features
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Select supported route format engines for LED destination boards (select V1, V2, or both).
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-0.5">
+                      {/* Card: V2 Route Engine */}
+                      <div
+                        role="checkbox"
+                        aria-checked={formV2}
+                        tabIndex={0}
+                        onClick={() => {
+                          const nextV2 = !formV2;
+                          setFormV2(nextV2);
+                          if (nextV2 || formV1) {
+                            setFormRouteEngineError("");
+                          } else {
+                            setFormRouteEngineError(
+                              "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                            );
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            const nextV2 = !formV2;
+                            setFormV2(nextV2);
+                            if (nextV2 || formV1) {
+                              setFormRouteEngineError("");
+                            } else {
+                              setFormRouteEngineError(
+                                "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                              );
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                          formV2
+                            ? "border-emerald-500/70 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
+                            : formRouteEngineError
+                            ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
+                            : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                            <Sliders className="h-4 w-4 text-emerald-600 shrink-0" />
+                            <span>V2 Route Engine (Modern)</span>
+                          </div>
+                          <Checkbox
+                            checked={formV2}
+                            tabIndex={-1}
+                            className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                          Multi-slide bilingual layouts & split-screen Unicode Kannada
+                        </p>
+                      </div>
+
+                      {/* Card: V1 Route Legacy */}
+                      <div
+                        role="checkbox"
+                        aria-checked={formV1}
+                        tabIndex={0}
+                        onClick={() => {
+                          const nextV1 = !formV1;
+                          setFormV1(nextV1);
+                          if (nextV1 || formV2) {
+                            setFormRouteEngineError("");
+                          } else {
+                            setFormRouteEngineError(
+                              "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                            );
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            const nextV1 = !formV1;
+                            setFormV1(nextV1);
+                            if (nextV1 || formV2) {
+                              setFormRouteEngineError("");
+                            } else {
+                              setFormRouteEngineError(
+                                "At least one route format engine (V1 or V2) must be selected when PIS is enabled."
+                              );
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
+                          formV1
+                            ? "border-amber-500/70 bg-amber-500/5 text-foreground ring-1 ring-amber-500/20 shadow-2xs"
+                            : formRouteEngineError
+                            ? "border-destructive/60 bg-destructive/5 text-muted-foreground"
+                            : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
+                            <Tag className="h-4 w-4 text-amber-600 shrink-0" />
+                            <span>V1 Route Engine (Legacy)</span>
+                          </div>
+                          <Checkbox
+                            checked={formV1}
+                            tabIndex={-1}
+                            className="size-5 rounded-md border-2 border-foreground/50 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground pointer-events-none mt-0.5 shadow-xs"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
+                          Single destination scroll binary format (Firmware 1.x)
+                        </p>
+                      </div>
+                    </div>
+
+                    <FieldErrorText message={formRouteEngineError} />
+                  </div>
                 )}
-              </Button>
-            </DialogFooter>
+              </div>
+            )}
+
+            {/* Stepper Footer Buttons */}
+            {currentStep === 1 ? (
+              <DialogFooter className="flex items-center justify-end sm:justify-end pt-4 border-t border-border">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleNext}
+                  disabled={isSubmitting || isCheckingStep}
+                  className="text-xs font-semibold gap-1"
+                >
+                  {isCheckingStep ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Checking...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Continue</span>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            ) : (
+              <DialogFooter className="flex items-center justify-between sm:justify-between pt-4 border-t border-border">
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={handleBack}
+                  disabled={isSubmitting}
+                  className="text-xs font-semibold gap-1"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  <span>Back</span>
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isSubmitting}
+                  className="text-xs font-semibold gap-1.5"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>
+                      {editingCustomer
+                        ? "Save Changes"
+                        : "Create Customer"}
+                    </span>
+                  )}
+                </Button>
+              </DialogFooter>
+            )}
           </form>
         </DialogContent>
       </Dialog>
@@ -1055,17 +1386,7 @@ export function RegularCustomersPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingCustomer(null)}
-              disabled={isDeleting}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"
@@ -1150,17 +1471,7 @@ export function RegularCustomersPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setStatusPromptCustomer(null)}
-              disabled={isUpdatingStatus}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               size="sm"
               onClick={handleConfirmStatusToggle}

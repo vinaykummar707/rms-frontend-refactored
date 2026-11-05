@@ -300,6 +300,8 @@ export function STUOnboardingWizardDialog({
         step1Errors.email = "Corporate email is required.";
       } else if (!emailRegex.test(trimmedEmail)) {
         step1Errors.email = "Please enter a valid corporate email address (e.g. contact@agency.gov.in).";
+      } else if (adminEmail.trim() && trimmedEmail.toLowerCase() === adminEmail.trim().toLowerCase()) {
+        step1Errors.email = "Corporate email and administrative email cannot be the same.";
       }
 
       if (!trimmedPhone) {
@@ -424,6 +426,8 @@ export function STUOnboardingWizardDialog({
       step5Errors.adminEmail = "Administrator login email is required.";
     } else if (!emailRegex.test(trimmedAdminEmail)) {
       step5Errors.adminEmail = "Please enter a valid administrator email address.";
+    } else if (trimmedAdminEmail.toLowerCase() === email.trim().toLowerCase()) {
+      step5Errors.adminEmail = "Administrative email and corporate email cannot be the same.";
     }
 
     if (!adminPassword) {
@@ -473,6 +477,7 @@ export function STUOnboardingWizardDialog({
       const lower = msg.toLowerCase();
       if (
         lower.includes("admin email") ||
+        lower.includes("cannot be the same") ||
         lower.includes("already registered in authentication") ||
         lower.includes("already registered to another organization") ||
         lower.includes("user with email")
@@ -606,6 +611,13 @@ export function STUOnboardingWizardDialog({
                     const trimmed = email.trim();
                     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
                     if (trimmed && emailRegex.test(trimmed)) {
+                      if (adminEmail.trim() && trimmed.toLowerCase() === adminEmail.trim().toLowerCase()) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          email: "Corporate email and administrative email cannot be the same.",
+                        }));
+                        return;
+                      }
                       try {
                         const isDup = await checkOrganizationEmailDuplicate(trimmed);
                         if (isDup) {
@@ -1290,6 +1302,13 @@ export function STUOnboardingWizardDialog({
                       const trimmed = adminEmail.trim();
                       const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
                       if (trimmed && emailRegex.test(trimmed)) {
+                        if (trimmed.toLowerCase() === email.trim().toLowerCase()) {
+                          setErrors((prev) => ({
+                            ...prev,
+                            adminEmail: "Administrative email and corporate email cannot be the same.",
+                          }));
+                          return;
+                        }
                         try {
                           const { data: existingUser } = await supabase
                             .from("users")
@@ -1430,16 +1449,6 @@ export function STUOnboardingWizardDialog({
         {/* Wizard Footer Controls */}
         <DialogFooter className="flex items-center justify-between sm:justify-between border-t border-border pt-4">
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleClose}
-              disabled={isSubmitting}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
             {currentStep > 1 && (
               <Button
                 type="button"

@@ -759,17 +759,7 @@ export function DepotsPage() {
               )}
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setIsCreateOpen(false)}
-                disabled={isCreating}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
+            <DialogFooter className="pt-3 border-t border-border">
               <Button
                 type="submit"
                 size="sm"
@@ -893,17 +883,7 @@ export function DepotsPage() {
                 )}
               </div>
 
-              <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingDepot(null)}
-                  disabled={isUpdating}
-                  className="text-xs"
-                >
-                  Cancel
-                </Button>
+              <DialogFooter className="pt-3 border-t border-border">
                 <Button
                   type="submit"
                   size="sm"
@@ -962,17 +942,7 @@ export function DepotsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="gap-2 sm:gap-0 pt-4 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeletingDepot(null)}
-              disabled={isDeleting}
-              className="text-xs"
-            >
-              Cancel
-            </Button>
+          <DialogFooter className="pt-4 border-t border-border">
             <Button
               type="button"
               variant="destructive"

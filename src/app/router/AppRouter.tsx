@@ -11,6 +11,8 @@ import { RoutesPage } from "@/pages/routes/RoutesPage";
 import { RegularRoutesPage } from "@/pages/regularRoutes/RegularRoutesPage";
 import { UsersPage } from "@/pages/users/UsersPage";
 import { RegularCustomersPage } from "@/pages/regularCustomers/RegularCustomersPage";
+import { StopsPage } from "@/pages/stops";
+import { PremadeAudiosPage } from "@/pages/premadeAudios/PremadeAudiosPage";
 import { CreateRoutePage } from "@/pages/routes/CreateRoutePage";
 import { RoutePlaceholder } from "./RoutePlaceholder";
 import { ROUTES } from "@/navigation/routes";
@@ -210,6 +212,40 @@ export function AppRouter() {
           }
         />
 
+        {/* Transit Stops Page */}
+        <Route
+          path="stops"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "stops")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "stops")?.features || []
+              }
+            >
+              <StopsPage />
+            </RoleGuard>
+          }
+        />
+
+        {/* Premade Audios Page */}
+        <Route
+          path="premade-audios"
+          element={
+            <RoleGuard
+              roles={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "premade-audios")?.roles || []
+              }
+              features={
+                PROTECTED_ROUTES_METADATA.find((r) => r.path === "premade-audios")?.features || []
+              }
+            >
+              <PremadeAudiosPage />
+            </RoleGuard>
+          }
+        />
+
         {/* Other Protected Route Boundaries */}
         {PROTECTED_ROUTES_METADATA.filter(
           (routeMeta) =>
@@ -219,7 +255,9 @@ export function AppRouter() {
             routeMeta.path !== "routes" &&
             routeMeta.path !== "regular-routes" &&
             routeMeta.path !== "users" &&
-            routeMeta.path !== "regular-customers"
+            routeMeta.path !== "regular-customers" &&
+            routeMeta.path !== "stops" &&
+            routeMeta.path !== "premade-audios"
         ).map((routeMeta) => (
           <Route
             key={routeMeta.path}

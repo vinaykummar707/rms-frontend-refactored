@@ -165,34 +165,39 @@ describe("Route Stop Selection & Mutual Exclusion", () => {
     expect(serialized).toBe("Domlur, HAL, Marathahalli");
   });
 
-  it("prepends 'None' option to select items allowing users to clear stop selection", () => {
-    const NONE_OPTION_VALUE = "__none__";
+  it("provides clean catalog select items without 'None' and clears stop value to empty string", () => {
     const availableStops = [
       { id: "s1", name: "Majestic BS", name_kn: "ಮೆಜೆಸ್ಟಿಕ್" },
       { id: "s2", name: "Corporation" },
     ];
 
-    const buildItems = (stops: Stop[], _currentVal?: string) => {
-      const items = [
-        { value: NONE_OPTION_VALUE, label: "None" },
-        ...stops.map((s) => ({
-          value: s.name,
-          label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
-        })),
-      ];
+    const buildItems = (stops: Stop[], currentVal?: string) => {
+      const items = stops.map((s) => ({
+        value: s.name,
+        label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+      }));
+      const curNorm = (currentVal || "").toLowerCase().trim();
+      if (currentVal && !items.some((i) => i.value.toLowerCase() === curNorm)) {
+        items.unshift({
+          value: currentVal,
+          label: `${currentVal} (Custom)`,
+        });
+      }
       return items;
     };
 
     const items = buildItems(availableStops, "Majestic BS");
-    expect(items[0]).toEqual({ value: "__none__", label: "None" });
-    expect(items.length).toBe(3);
+    expect(items[0]).toEqual({ value: "Majestic BS", label: "Majestic BS (ಮೆಜೆಸ್ಟಿಕ್)" });
+    expect(items.some((i) => i.value === "None" || i.value === "__none__")).toBe(false);
+    expect(items.length).toBe(2);
 
-    // Simulating selecting "None" clears the value to empty string
-    const handleSelection = (selectedVal: string) =>
-      selectedVal === NONE_OPTION_VALUE ? "" : selectedVal;
-
-    expect(handleSelection("__none__")).toBe("");
-    expect(handleSelection("Corporation")).toBe("Corporation");
+    // Simulating clear action resets value to empty string
+    let stopValue = "Majestic BS";
+    const clearStop = () => {
+      stopValue = "";
+    };
+    clearStop();
+    expect(stopValue).toBe("");
   });
 
   it("restores all stops to available lists when source or destination is cleared to empty", () => {

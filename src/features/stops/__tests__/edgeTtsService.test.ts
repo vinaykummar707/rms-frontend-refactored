@@ -5,7 +5,6 @@ import {
   DEFAULT_VOICE,
   resolveVoice,
   createSyntheticWavBlob,
-  getTtsApiUrl,
 } from "../services/edgeTtsService";
 import { normalizeStopNameForSpeech } from "../../../../server/ttsServer";
 
@@ -72,8 +71,5 @@ describe("Edge-TTS Service & Voice Catalog", () => {
     expect(normalizeStopNameForSpeech("ಕೆಂಪೇಗೌಡ ಬಸ್ ನಿಲ್ದಾಣ")).toBe("ಕೆಂಪೇಗೌಡ ಬಸ್ ನಿಲ್ದಾಣ");
     expect(normalizeStopNameForSpeech("शिवाजी नगर")).toBe("शिवाजी नगर");
   });
-
-  it("should resolve TTS API URL properly in dev and custom configurations", () => {
-    expect(getTtsApiUrl("/api/tts/synthesize")).toBe("/api/tts/synthesize");
-  });
 });
+

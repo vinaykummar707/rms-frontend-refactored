@@ -58,36 +58,6 @@ export function createSyntheticWavBlob(
 }
 
 /**
- * Resolves the TTS API endpoint URL:
- * - If VITE_TTS_API_URL is provided, use it.
- * - In local dev (Vite proxy active on port 9092), return relative path so Vite proxies it.
- * - In production when hosted via `serve` on another port (e.g. 5173), direct the browser to the same host on port 5050.
- */
-export function getTtsApiUrl(path: string = "/api/tts/synthesize"): string {
-  const cleanPath = path.startsWith("/") ? path : `/${path}`;
-
-  // 1. Explicit env variable override
-  const envBase = (import.meta as any).env?.VITE_TTS_API_URL;
-  if (envBase) {
-    return `${envBase.replace(/\/+$/, "")}${cleanPath}`;
-  }
-
-  // 2. Vite development mode (uses proxy defined in vite.config.ts)
-  if ((import.meta as any).env?.DEV) {
-    return cleanPath;
-  }
-
-  // 3. Browser production runtime (e.g. hosted via `serve -s dist -l 5173`)
-  if (typeof window !== "undefined" && window.location) {
-    if (window.location.port && window.location.port !== "5050") {
-      return `${window.location.protocol}//${window.location.hostname}:5050${cleanPath}`;
-    }
-  }
-
-  return cleanPath;
-}
-
-/**
  * Synthesizes audio using Microsoft Edge TTS via the local Express relay server
  */
 export async function synthesizeEdgeTts(
@@ -99,8 +69,7 @@ export async function synthesizeEdgeTts(
   }
 
   try {
-    const apiUrl = getTtsApiUrl("/api/tts/synthesize");
-    const response = await fetch(apiUrl, {
+    const response = await fetch("/api/tts/synthesize", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -192,3 +161,4 @@ export async function generateAndUploadStopAudio(
     fileName: audioFile.name,
   };
 }
+

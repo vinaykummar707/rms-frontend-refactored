@@ -1,10 +1,6 @@
 import express, { type Request, type Response } from "express";
 import cors from "cors";
-import { spawn } from "child_process";
-import fs from "fs";
-import path from "path";
-import os from "os";
-import crypto from "crypto";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 import {
   INDIAN_LANGUAGES,
   DEFAULT_LANGUAGE,
@@ -83,10 +79,8 @@ app.get("/api/tts/voices", (_req: Request, res: Response) => {
   });
 });
 
-// Synthesis endpoint
+// Synthesis endpoint (Pure Node.js via msedge-tts - No Python needed)
 app.post("/api/tts/synthesize", async (req: Request, res: Response) => {
-  let tempFilePath: string | null = null;
-
   try {
     const {
       text,
@@ -109,109 +103,62 @@ app.post("/api/tts/synthesize", async (req: Request, res: Response) => {
       `[TTS] Synthesizing "${normalizedText}" using voice "${chosenVoice}" (Rate: ${rate})...`
     );
 
-    // Write text to a temporary UTF-8 file to prevent Windows command line ANSI encoding corruption
-    const tempFileName = `edge-tts-${crypto.randomUUID()}.txt`;
-    tempFilePath = path.join(os.tmpdir(), tempFileName);
-    fs.writeFileSync(tempFilePath, normalizedText, "utf8");
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(chosenVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
-    const args = [
-      "--file",
-      tempFilePath,
-      "--voice",
-      chosenVoice,
-      "--rate",
-      rate,
-      "--volume",
-      volume,
-      "--pitch",
-      pitch,
-    ];
-
-    const child = spawn("edge-tts", args);
+    const readable = tts.toStream(normalizedText, { rate, pitch, volume });
     const audioChunks: Buffer[] = [];
-    let stderrData = "";
 
-    const cleanupTempFile = () => {
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
+    await new Promise<void>((resolve, reject) => {
+      readable.audioStream.on("data", (chunk: Buffer) => audioChunks.push(chunk));
+      readable.audioStream.on("close", () => {
         try {
-          fs.unlinkSync(tempFilePath);
+          tts.close();
         } catch {}
-      }
-    };
-
-    child.stdout.on("data", (chunk: Buffer) => {
-      audioChunks.push(chunk);
+        resolve();
+      });
+      readable.audioStream.on("error", (err: Error) => {
+        try {
+          tts.close();
+        } catch {}
+        reject(err);
+      });
     });
 
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderrData += chunk.toString();
-    });
+    const totalBuffer = Buffer.concat(audioChunks);
 
-    child.on("error", (err: Error) => {
-      cleanupTempFile();
-      console.error("[TTS] Process spawn error:", err);
+    if (totalBuffer.length === 0) {
+      console.warn("[TTS] Zero bytes returned from synthesis.");
       if (!res.headersSent) {
-        res.status(500).json({
-          error: "Failed to execute edge-tts process.",
-          details: err.message,
+        return res.status(502).json({
+          error: "No audio data received from Edge TTS.",
         });
       }
-    });
-
-    child.on("close", (code: number) => {
-      cleanupTempFile();
-
-      if (code !== 0) {
-        console.error(`[TTS] edge-tts exited with code ${code}. Stderr: ${stderrData}`);
-        if (!res.headersSent) {
-          return res.status(502).json({
-            error: "Edge TTS service failed to generate audio.",
-            details: stderrData || `Exit code ${code}`,
-          });
-        }
-      }
-
-      const totalBuffer = Buffer.concat(audioChunks);
-      if (totalBuffer.length === 0) {
-        console.warn("[TTS] Zero bytes returned from synthesis.");
-        if (!res.headersSent) {
-          return res.status(502).json({
-            error: "No audio data received from Edge TTS.",
-          });
-        }
-      }
-
-      console.log(
-        `[TTS] Successfully synthesized "${normalizedText}" (${totalBuffer.length} bytes).`
-      );
-
-      res.writeHead(200, {
-        "Content-Type": "audio/mpeg",
-        "Content-Length": totalBuffer.length,
-        "Content-Disposition": 'inline; filename="announcement.mp3"',
-        "Cache-Control": "public, max-age=3600",
-      });
-
-      res.end(totalBuffer);
-    });
-  } catch (error: any) {
-    if (tempFilePath && fs.existsSync(tempFilePath)) {
-      try {
-        fs.unlinkSync(tempFilePath);
-      } catch {}
+      return;
     }
 
+    console.log(
+      `[TTS] Successfully synthesized "${normalizedText}" (${totalBuffer.length} bytes).`
+    );
+
+    res.writeHead(200, {
+      "Content-Type": "audio/mpeg",
+      "Content-Length": totalBuffer.length,
+      "Content-Disposition": 'inline; filename="announcement.mp3"',
+      "Cache-Control": "public, max-age=3600",
+    });
+
+    res.end(totalBuffer);
+  } catch (error: any) {
     console.error("[TTS] Unhandled synthesis error:", error);
     if (!res.headersSent) {
-      res.status(500).json({
-        error: "Internal server error during speech synthesis.",
+      res.status(502).json({
+        error: "Failed to synthesize audio with Edge TTS.",
         details: error?.message || String(error),
       });
     }
   }
 });
-
-
 
 if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   app.listen(PORT, () => {

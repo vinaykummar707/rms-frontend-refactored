@@ -2,5 +2,5 @@ packages: []
 
 allowBuilds:
   esbuild: true
-  msedge-tts: set this to true or false
+  msedge-tts: true
   msw: false

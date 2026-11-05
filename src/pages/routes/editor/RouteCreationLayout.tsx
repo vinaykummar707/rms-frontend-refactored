@@ -24,6 +24,18 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  Pencil,
+  ListFilter,
+  MapPin,
+  GitBranch,
+  VolumeX,
+  Radio,
+  CheckCircle2,
+  AlertCircle,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,29 +85,31 @@ import { JsonViewerDialog } from "@/components/common/JsonViewerDialog";
 import { useTabsStore, Tab, type TabType } from "@/features/stores/useTabsStore";
 import { useSimulationStore } from "@/features/stores/useSimulationStore";
 import { useOrganizationStore } from "@/features/stores/useOrganizationStore";
+import { useDepotStore } from "@/features/stores/useDepotStore";
 import { useAuthStore } from "@/core/auth/authStore";
+import { useAuthorization } from "@/core/authorization/useAuthorization";
 import { isSuperAdmin } from "@/core/authorization/customerTier";
 import { Controller, type SubmitHandler, useFormContext } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { IRoute } from "@/shared/types/route";
 import { routeCrud } from "@/features/routes/api/routeCrud";
-import type { IStopWithAudio } from "@/shared/types/stop";
 import { stopCrud } from "@/features/stops/api/stopCrud";
+import { stageAudioCrud } from "@/features/stageAudios/api/stageAudioCrud";
+import { getStagePreset } from "@/features/stageAudios/services/stageAudioPresets";
+import type { IStageAudio, StageType } from "@/shared/types/stageAudio";
 import { checkActiveDuplicate } from "@/shared/hooks/useCrud";
 import { notify } from "@/core/notifications/notificationService";
 import { AVAILABLE_LANGUAGES } from "@/config/constants/languages";
 import {
   getDefaultSingleSimulation,
   getDefaultTextConfig,
-  getDefaultStopSingleSimulation,
   getDefaultThreeSimulation,
   getDefaultTwoSimulation,
 } from "@/config/constants/defaultRouteValues";
 import {
   DEFAULT_SIMULATION_HEIGHTS,
   DEFAULT_SIMULATION_WIDTHS,
-  stopStates,
   FONT_WEIGHTS,
   type DisplayConfigPostRequest,
   type FontWeight,
@@ -234,6 +248,13 @@ const ROUTE_SYNC_FIELDS: string[] = [
 // Split-route number zones are half height, so icons render too small there and are not offered
 const isSplitRouteNumberZone = (key: string) => key === "routeNumber1" || key === "routeNumber2";
 
+interface ViaStopItem {
+  id: string;
+  name: string;
+  name_kn?: string;
+  isCustom?: boolean;
+}
+
 interface RouteCreationLayoutProps extends React.HTMLAttributes<HTMLDivElement> {
   className?: string;
   mode?: "create" | "edit";
@@ -242,10 +263,20 @@ interface RouteCreationLayoutProps extends React.HTMLAttributes<HTMLDivElement> 
 export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreationLayoutProps>(
   function RouteCreationLayout({ className, mode = "create", ...otherProps }, ref) {
     const navigate = useNavigate();
-    const { depotId } = useParams<{ areaId?: string; depotId?: string }>();
+    const { depotId } = useParams<{ areaId?: string; depotId?: string; routeId?: string }>();
     const { selectedOrganization } = useOrganizationStore();
+    const selectedDepot = useDepotStore((state) => state.selectedDepot);
     const loggedUser = useAuthStore((state) => state.user);
     const isMasterUser = isSuperAdmin(loggedUser);
+    const { isSuperAdmin: checkSuperAdmin, canAccessModule, canAccessRole } = useAuthorization();
+
+    const canSelectStops = useMemo(() => {
+      return (
+        checkSuperAdmin ||
+        canAccessModule("PAS") ||
+        canAccessRole(["master", "organization_admin", "region_admin", "depot_admin"])
+      );
+    }, [checkSuperAdmin, canAccessModule, canAccessRole]);
 
     // Global Stores
     const { selectedTab, setSelectedTab } = useTabsStore();
@@ -264,6 +295,10 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       clearErrors,
       control,
     } = methods;
+
+    const effectiveDepotId = useMemo(() => {
+      return depotId || (watch("depot_id") as string) || selectedDepot?.id || "";
+    }, [depotId, watch, selectedDepot?.id]);
 
     const { useCreate, useUpdate } = routeCrud;
     const { mutate: createRoute, isPending: isCreatingRoute } = useCreate();
@@ -325,11 +360,12 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       return () => observer.disconnect();
     }, [ledStageEl, ledMatrixEl]);
 
-    // Stops state (for Tab.STOPS)
-    const [stopLanguage, setStopLanguage] = useState<string>("en");
-    const [stopUpDown, setStopUpDown] = useState<"up" | "down">("up");
-    const [selectedStop, setSelectedStop] = useState<IStopWithAudio | null>(null);
-    const [selectedStopTypes, setSelectedStopTypes] = useState<(typeof stopStates)[number][]>(["next"]);
+    // Stop Announcement Simulator State (for Tab.STOPS)
+    const [simStopId, setSimStopId] = useState<string>("");
+    const [simStage, setSimStage] = useState<"current" | "next" | "arriving">("current");
+    const [simLanguage, setSimLanguage] = useState<string>("en");
+    const [playbackPhase, setPlaybackPhase] = useState<"idle" | "playing_stage" | "playing_stop">("idle");
+    const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
     // Watch Form Values
     const isSplitRoute = watch("is_split_route");
@@ -340,6 +376,20 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const destination = watch("destination");
     const separation = watch("separation");
     const isReturn = watch("return");
+    const rawViaFormVal = watch("via");
+
+    // Input modes for Source, Destination, and Via ("select" dropdown or "manual" typing)
+    const [sourceInputMode, setSourceInputMode] = useState<"select" | "manual">("select");
+    const [destInputMode, setDestInputMode] = useState<"select" | "manual">("select");
+    const [viaInputMode, setViaInputMode] = useState<"select" | "manual">("select");
+
+    // Via stops manager state
+    const [viaStops, setViaStops] = useState<ViaStopItem[]>([]);
+    const [selectedViaPickerId, setSelectedViaPickerId] = useState<string>("");
+    const [customViaInput, setCustomViaInput] = useState<string>("");
+    const [draggedViaIdx, setDraggedViaIdx] = useState<number | null>(null);
+    const [dragOverViaIdx, setDragOverViaIdx] = useState<number | null>(null);
+    const hasInitializedVia = useRef(false);
 
     const languageItems = useMemo(
       () =>
@@ -579,16 +629,268 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const getFontFileByLanguage = useFontFileByLanguage();
 
     const stopFilters = useMemo(
-      () => ({ depot_id: depotId || "", organization_id: selectedOrganization?.id || "" }),
-      [depotId, selectedOrganization?.id]
+      () => ({ depot_id: effectiveDepotId || "", organization_id: selectedOrganization?.id || "" }),
+      [effectiveDepotId, selectedOrganization?.id]
     );
 
     const { data: stopsData } = stopCrud.useList({
       filters: stopFilters,
       orderBy: { column: "created_at", ascending: false },
-      skip: !depotId,
+      custom(query) {
+        return query.select(
+          `*,
+           stop_audios (
+             id,
+             url,
+             file_name,
+             file_size
+           )`
+        );
+      },
+      skip: !effectiveDepotId,
     });
     const depotStops = (stopsData?.data as any[]) || [];
+
+    const { data: stageAudiosResponse } = stageAudioCrud.useList({
+      orderBy: { column: "created_at", ascending: true },
+    });
+    const stageAudios = (stageAudiosResponse?.data as IStageAudio[]) || [];
+
+    // Initialize viaStops from form on load
+    useEffect(() => {
+      if (!hasInitializedVia.current && rawViaFormVal && viaStops.length === 0) {
+        const parts = rawViaFormVal.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          const initialItems: ViaStopItem[] = parts.map((part, idx) => {
+            const matched = depotStops.find(
+              (s) => s.name?.toLowerCase().trim() === part.toLowerCase().trim()
+            );
+            return {
+              id: matched ? matched.id : `custom-via-${idx}-${part}`,
+              name: matched ? matched.name : part,
+              name_kn: matched?.name_kn,
+              isCustom: !matched,
+            };
+          });
+          setViaStops(initialItems);
+          hasInitializedVia.current = true;
+        }
+      }
+    }, [rawViaFormVal, depotStops, viaStops.length]);
+
+    // Link custom via stops to catalog when depotStops loads
+    useEffect(() => {
+      if (depotStops.length > 0 && viaStops.length > 0) {
+        let hasChanges = false;
+        const updated = viaStops.map((v) => {
+          if (v.isCustom) {
+            const match = depotStops.find(
+              (s) => s.name?.toLowerCase().trim() === v.name.toLowerCase().trim()
+            );
+            if (match) {
+              hasChanges = true;
+              return { ...v, id: match.id, name_kn: match.name_kn, isCustom: false };
+            }
+          }
+          return v;
+        });
+        if (hasChanges) {
+          setViaStops(updated);
+        }
+      }
+    }, [depotStops]);
+
+    // Mutual Exclusion Filtering
+    const sourceVal = (source || "").trim();
+    const destVal = (destination || "").trim();
+    const sourceNorm = sourceVal.toLowerCase();
+    const destNorm = destVal.toLowerCase();
+    const viaNamesSet = useMemo(
+      () => new Set(viaStops.map((v) => v.name.toLowerCase().trim())),
+      [viaStops]
+    );
+
+    // 1. Available for Source (excludes destination and vias, keeps current source)
+    const availableSourceStops = useMemo(() => {
+      return depotStops.filter((s) => {
+        const sName = (s.name || "").toLowerCase().trim();
+        if (!sName) return false;
+        if (sName === sourceNorm) return true;
+        if (sName === destNorm) return false;
+        if (viaNamesSet.has(sName)) return false;
+        return true;
+      });
+    }, [depotStops, sourceNorm, destNorm, viaNamesSet]);
+
+    // 2. Available for Destination (excludes source and vias, keeps current dest)
+    const availableDestStops = useMemo(() => {
+      return depotStops.filter((s) => {
+        const sName = (s.name || "").toLowerCase().trim();
+        if (!sName) return false;
+        if (sName === destNorm) return true;
+        if (sName === sourceNorm) return false;
+        if (viaNamesSet.has(sName)) return false;
+        return true;
+      });
+    }, [depotStops, sourceNorm, destNorm, viaNamesSet]);
+
+    // 3. Available for Via addition (excludes current source, destination, and already added vias)
+    const availableViaStops = useMemo(() => {
+      return depotStops.filter((s) => {
+        const sName = (s.name || "").toLowerCase().trim();
+        if (!sName) return false;
+        if (sName === sourceNorm) return false;
+        if (sName === destNorm) return false;
+        if (viaNamesSet.has(sName)) return false;
+        return true;
+      });
+    }, [depotStops, sourceNorm, destNorm, viaNamesSet]);
+
+    const sourceSelectItems = useMemo(() => {
+      const items = availableSourceStops.map((s) => ({
+        value: s.name,
+        label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+      }));
+      if (sourceVal && !items.some((i) => i.value.toLowerCase() === sourceNorm)) {
+        items.unshift({
+          value: sourceVal,
+          label: `${sourceVal} (Custom)`,
+        });
+      }
+      return items;
+    }, [availableSourceStops, sourceVal, sourceNorm]);
+
+    const destSelectItems = useMemo(() => {
+      const items = availableDestStops.map((s) => ({
+        value: s.name,
+        label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+      }));
+      if (destVal && !items.some((i) => i.value.toLowerCase() === destNorm)) {
+        items.unshift({
+          value: destVal,
+          label: `${destVal} (Custom)`,
+        });
+      }
+      return items;
+    }, [availableDestStops, destVal, destNorm]);
+
+    const viaSelectItems = useMemo(() => {
+      return availableViaStops.map((s) => ({
+        value: s.id,
+        label: s.name_kn ? `${s.name} (${s.name_kn})` : s.name,
+      }));
+    }, [availableViaStops]);
+
+    const handleAddViaFromSelect = useCallback(
+      (stopId: string) => {
+        const stop = depotStops.find((s) => s.id === stopId);
+        if (!stop) return;
+        const newVia: ViaStopItem = {
+          id: stop.id,
+          name: stop.name,
+          name_kn: stop.name_kn,
+          isCustom: false,
+        };
+        const updated = [...viaStops, newVia];
+        setViaStops(updated);
+        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setSelectedViaPickerId("");
+      },
+      [depotStops, viaStops, setValue]
+    );
+
+    const handleAddCustomVia = useCallback(() => {
+      const trimmed = customViaInput.trim();
+      if (!trimmed) return;
+      const parts = trimmed.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+      const newItems: ViaStopItem[] = [];
+      for (const part of parts) {
+        const pNorm = part.toLowerCase();
+        if (pNorm === sourceNorm || pNorm === destNorm) {
+          notify.warning(`"${part}" is already selected as Source or Destination`);
+          continue;
+        }
+        if (
+          viaStops.some((v) => v.name.toLowerCase() === pNorm) ||
+          newItems.some((v) => v.name.toLowerCase() === pNorm)
+        ) {
+          notify.warning(`"${part}" is already in the via waypoints list`);
+          continue;
+        }
+        newItems.push({
+          id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          name: part,
+          isCustom: true,
+        });
+      }
+      if (newItems.length > 0) {
+        const updated = [...viaStops, ...newItems];
+        setViaStops(updated);
+        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setCustomViaInput("");
+      }
+    }, [customViaInput, viaStops, sourceNorm, destNorm, setValue]);
+
+    const handleRemoveVia = useCallback(
+      (index: number) => {
+        const updated = viaStops.filter((_, idx) => idx !== index);
+        setViaStops(updated);
+        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      },
+      [viaStops, setValue]
+    );
+
+    const handleMoveViaUp = useCallback(
+      (index: number) => {
+        if (index === 0) return;
+        const updated = [...viaStops];
+        const temp = updated[index - 1];
+        updated[index - 1] = updated[index];
+        updated[index] = temp;
+        setViaStops(updated);
+        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      },
+      [viaStops, setValue]
+    );
+
+    const handleMoveViaDown = useCallback(
+      (index: number) => {
+        if (index >= viaStops.length - 1) return;
+        const updated = [...viaStops];
+        const temp = updated[index + 1];
+        updated[index + 1] = updated[index];
+        updated[index] = temp;
+        setViaStops(updated);
+        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      },
+      [viaStops, setValue]
+    );
+
+    const handleViaDragStart = (index: number) => {
+      setDraggedViaIdx(index);
+    };
+
+    const handleViaDragOver = (e: React.DragEvent, index: number) => {
+      e.preventDefault();
+      if (dragOverViaIdx !== index) {
+        setDragOverViaIdx(index);
+      }
+    };
+
+    const handleViaDrop = (dropIndex: number) => {
+      if (draggedViaIdx === null || draggedViaIdx === dropIndex) {
+        setDraggedViaIdx(null);
+        setDragOverViaIdx(null);
+        return;
+      }
+      const updated = [...viaStops];
+      const [item] = updated.splice(draggedViaIdx, 1);
+      updated.splice(dropIndex, 0, item);
+      setViaStops(updated);
+      setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      setDraggedViaIdx(null);
+      setDragOverViaIdx(null);
+    };
 
     // Auto-preview loop timer
     useEffect(() => {
@@ -629,15 +931,349 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const handleReturnRoute = () => {
       const src = getValues("source");
       const dest = getValues("destination");
-      const viaStops = (getValues("via") || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
       setValue("source", dest, { shouldDirty: true });
       setValue("destination", src, { shouldDirty: true });
       if (viaStops.length > 1) {
-        setValue("via", viaStops.reverse().join(", "), { shouldDirty: true });
+        const reversed = [...viaStops].reverse();
+        setViaStops(reversed);
+        setValue("via", reversed.map((v) => v.name).join(", "), { shouldDirty: true });
+      } else {
+        const rawViaList = (getValues("via") || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        if (rawViaList.length > 1) {
+          setValue("via", rawViaList.reverse().join(", "), { shouldDirty: true });
+        }
       }
       setValue("return", !isReturn, { shouldDirty: true });
       notify.info(!isReturn ? "Return trip: direction reversed" : "Outbound trip: direction restored");
     };
+
+    // =========================================================================
+    // STOP ANNOUNCEMENT SIMULATOR ENGINE (Tab.STOPS)
+    // =========================================================================
+    interface RouteSimStopOption {
+      id: string;
+      name: string;
+      name_kn?: string;
+      group: "via" | "endpoint";
+      label: string;
+      stopAudioUrl?: string | null;
+    }
+
+    const simulationRouteStops = useMemo<RouteSimStopOption[]>(() => {
+      const options: RouteSimStopOption[] = [];
+
+      // 1. Via waypoints (primary for intermediate stop announcements)
+      viaStops.forEach((via, idx) => {
+        const matched = depotStops.find(
+          (s) =>
+            s.id === via.id ||
+            (s.name && s.name.toLowerCase().trim() === via.name.toLowerCase().trim())
+        );
+        const audioRec = Array.isArray(matched?.stop_audios)
+          ? matched?.stop_audios[0]
+          : matched?.stop_audios;
+        options.push({
+          id: matched?.id || via.id,
+          name: via.name,
+          name_kn: via.name_kn || matched?.name_kn,
+          group: "via",
+          label: `Waypoint #${idx + 1}: ${via.name}`,
+          stopAudioUrl: audioRec?.url || null,
+        });
+      });
+
+      // 2. Endpoints (Source & Destination)
+      if (sourceVal) {
+        const matched = depotStops.find(
+          (s) => s.name && s.name.toLowerCase().trim() === sourceNorm
+        );
+        const audioRec = Array.isArray(matched?.stop_audios)
+          ? matched?.stop_audios[0]
+          : matched?.stop_audios;
+        options.push({
+          id: matched?.id || "source-endpoint",
+          name: sourceVal,
+          name_kn: matched?.name_kn,
+          group: "endpoint",
+          label: `Origin: ${sourceVal}`,
+          stopAudioUrl: audioRec?.url || null,
+        });
+      }
+
+      if (destVal) {
+        const matched = depotStops.find(
+          (s) => s.name && s.name.toLowerCase().trim() === destNorm
+        );
+        const audioRec = Array.isArray(matched?.stop_audios)
+          ? matched?.stop_audios[0]
+          : matched?.stop_audios;
+        options.push({
+          id: matched?.id || "dest-endpoint",
+          name: destVal,
+          name_kn: matched?.name_kn,
+          group: "endpoint",
+          label: `Terminus: ${destVal}`,
+          stopAudioUrl: audioRec?.url || null,
+        });
+      }
+
+      return options;
+    }, [viaStops, sourceVal, sourceNorm, destVal, destNorm, depotStops]);
+
+    const effectiveSimStops = useMemo<RouteSimStopOption[]>(() => {
+      if (simulationRouteStops.length > 0) return simulationRouteStops;
+      return depotStops.map((s) => {
+        const audioRec = Array.isArray(s.stop_audios) ? s.stop_audios[0] : s.stop_audios;
+        return {
+          id: s.id,
+          name: s.name,
+          name_kn: s.name_kn,
+          group: "endpoint" as const,
+          label: s.name,
+          stopAudioUrl: audioRec?.url || null,
+        };
+      });
+    }, [simulationRouteStops, depotStops]);
+
+    const simStopSelectItems = useMemo(
+      () =>
+        effectiveSimStops.map((s) => ({
+          value: s.id,
+          label: `${s.label}${s.name_kn ? ` (${s.name_kn})` : ""}`,
+        })),
+      [effectiveSimStops]
+    );
+
+    useEffect(() => {
+      if (selectedTab === Tab.STOPS && effectiveSimStops.length > 0) {
+        if (!simStopId || !effectiveSimStops.some((s) => s.id === simStopId)) {
+          setSimStopId(effectiveSimStops[0].id);
+        }
+      }
+    }, [selectedTab, effectiveSimStops, simStopId]);
+
+    const selectedSimStop = useMemo(() => {
+      return effectiveSimStops.find((s) => s.id === simStopId) || effectiveSimStops[0] || null;
+    }, [effectiveSimStops, simStopId]);
+
+    const stageTypeMap: Record<string, StageType> = {
+      current: "current_stop",
+      next: "next_stop",
+      arriving: "arriving_stop",
+    };
+
+    const targetStageType = stageTypeMap[simStage] || "current_stop";
+
+    const matchedStageAudio = useMemo(() => {
+      const langLower = simLanguage.toLowerCase();
+      return stageAudios.find((a) => {
+        if (a.stage_type !== targetStageType) return false;
+        const aLang = (a.language || "").toLowerCase();
+        return (
+          aLang === langLower ||
+          aLang.startsWith(langLower + "-") ||
+          langLower.startsWith(aLang + "-")
+        );
+      });
+    }, [stageAudios, targetStageType, simLanguage]);
+
+    const staticLangPreset = useMemo(() => {
+      return AVAILABLE_LANGUAGES.find((l) => l.code.toLowerCase() === simLanguage.toLowerCase());
+    }, [simLanguage]);
+
+    const stageAudioUrl = useMemo(() => {
+      if (matchedStageAudio?.url) return matchedStageAudio.url;
+      if (simStage === "current") return staticLangPreset?.current || null;
+      if (simStage === "next") return staticLangPreset?.next || null;
+      return staticLangPreset?.coming || null;
+    }, [matchedStageAudio, staticLangPreset, simStage]);
+
+    const stopAudioUrl = useMemo(() => {
+      if (!selectedSimStop) return null;
+      if (selectedSimStop.stopAudioUrl) return selectedSimStop.stopAudioUrl;
+      const matched = depotStops.find(
+        (s) =>
+          s.id === selectedSimStop.id ||
+          (s.name && s.name.toLowerCase().trim() === selectedSimStop.name.toLowerCase().trim())
+      );
+      const audioRec = Array.isArray(matched?.stop_audios)
+        ? matched?.stop_audios[0]
+        : matched?.stop_audios;
+      return audioRec?.url || null;
+    }, [selectedSimStop, depotStops]);
+
+    const computeAnnouncementText = useCallback(
+      (stop: RouteSimStopOption, stage: "current" | "next" | "arriving", lang: string) => {
+        const isKn = lang === "kn" || lang.startsWith("kn-");
+        const displayName = isKn && stop.name_kn ? stop.name_kn : stop.name;
+
+        if (lang.startsWith("en")) {
+          const prefix =
+            stage === "current"
+              ? "CURRENT STOP IS"
+              : stage === "next"
+              ? "NEXT STOP IS"
+              : "ARRIVING AT";
+          return `${prefix} ${stop.name.toUpperCase()}`;
+        }
+
+        const stagePreset = getStagePreset(
+          lang,
+          stage === "current"
+            ? "current_stop"
+            : stage === "next"
+            ? "next_stop"
+            : "arriving_stop"
+        );
+        return `${stagePreset} ${displayName}`;
+      },
+      []
+    );
+
+    const stopChainedAudio = useCallback(() => {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+      }
+      setPlaybackPhase("idle");
+    }, []);
+
+    const playChainedAudio = useCallback(
+      (stageUrl: string | null, stopUrl: string | null) => {
+        if (!audioPlayerRef.current) {
+          audioPlayerRef.current = new Audio();
+        }
+        const audio = audioPlayerRef.current;
+        audio.pause();
+        audio.currentTime = 0;
+
+        if (stageUrl && stopUrl) {
+          setPlaybackPhase("playing_stage");
+          audio.src = stageUrl;
+          audio.onended = () => {
+            setPlaybackPhase("playing_stop");
+            audio.src = stopUrl;
+            audio.onended = () => setPlaybackPhase("idle");
+            audio.onerror = () => setPlaybackPhase("idle");
+            audio.play().catch(() => setPlaybackPhase("idle"));
+          };
+          audio.onerror = () => {
+            setPlaybackPhase("playing_stop");
+            audio.src = stopUrl;
+            audio.onended = () => setPlaybackPhase("idle");
+            audio.play().catch(() => setPlaybackPhase("idle"));
+          };
+          audio.play().catch((e) => {
+            console.warn("Stage audio play error:", e);
+            setPlaybackPhase("idle");
+          });
+        } else if (stageUrl) {
+          setPlaybackPhase("playing_stage");
+          audio.src = stageUrl;
+          audio.onended = () => setPlaybackPhase("idle");
+          audio.onerror = () => setPlaybackPhase("idle");
+          audio.play().catch(() => setPlaybackPhase("idle"));
+        } else if (stopUrl) {
+          setPlaybackPhase("playing_stop");
+          audio.src = stopUrl;
+          audio.onended = () => setPlaybackPhase("idle");
+          audio.onerror = () => setPlaybackPhase("idle");
+          audio.play().catch(() => setPlaybackPhase("idle"));
+        } else {
+          setPlaybackPhase("idle");
+        }
+      },
+      []
+    );
+
+    useEffect(() => {
+      return () => {
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+          audioPlayerRef.current.removeAttribute("src");
+        }
+      };
+    }, []);
+
+    useEffect(() => {
+      if (selectedTab !== Tab.STOPS && audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        setPlaybackPhase("idle");
+      }
+    }, [selectedTab]);
+
+    const syncStopAnnouncementSimulation = useCallback(
+      (
+        stop: RouteSimStopOption,
+        stage: "current" | "next" | "arriving",
+        lang: string,
+        stageAudio: string | null,
+        stopAudio: string | null
+      ) => {
+        const text = computeAnnouncementText(stop, stage, lang);
+        const singleSlide: Simulation = {
+          format: "single",
+          texts: {
+            text: {
+              text,
+              scrollType: "Right To Left",
+              scrollSpeed: 4,
+              fontHeight: 16,
+              fontWidth: 12,
+              fontWeight: "Bold",
+              position: "Center",
+              language: lang,
+              bitmap: "",
+              icon: "",
+              iconPosition: "start",
+              iconSpacing: 2,
+              iconWidthScale: 1.0,
+            },
+          },
+          height: 16,
+          width: currentSimulation?.width || 160,
+          type: "stop",
+          stopType: stage as any,
+          audioFileUrl: stopAudio,
+          stopTypeAudioFileUrl: stageAudio,
+        };
+
+        setValue(Tab.STOPS as any, [singleSlide], { shouldDirty: true });
+        setSelectedSimulationIndex(0);
+        setIsPaused(false);
+      },
+      [computeAnnouncementText, currentSimulation?.width, setValue, setSelectedSimulationIndex]
+    );
+
+    const prevSimTriggerRef = useRef<string>("");
+    useEffect(() => {
+      if (selectedTab !== Tab.STOPS || !selectedSimStop) return;
+
+      const triggerKey = `${selectedSimStop.id}_${simStage}_${simLanguage}`;
+      const hasChanged = prevSimTriggerRef.current !== triggerKey;
+      prevSimTriggerRef.current = triggerKey;
+
+      syncStopAnnouncementSimulation(
+        selectedSimStop,
+        simStage,
+        simLanguage,
+        stageAudioUrl,
+        stopAudioUrl
+      );
+
+      if (hasChanged) {
+        playChainedAudio(stageAudioUrl, stopAudioUrl);
+      }
+    }, [
+      selectedTab,
+      selectedSimStop,
+      simStage,
+      simLanguage,
+      stageAudioUrl,
+      stopAudioUrl,
+      syncStopAnnouncementSimulation,
+      playChainedAudio,
+    ]);
 
     const handleToggleSplitRoute = (checked: boolean) => {
       setValue("is_split_route", checked, { shouldDirty: true });
@@ -943,8 +1579,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         // Auto-sync via stops to depot
         if (data.via && data.depot_id) {
           try {
-            const viaStops = data.via.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
-            if (viaStops.length > 0) {
+            const rawViaList = data.via.split(/[,;]/).map((s: string) => s.trim()).filter(Boolean);
+            if (rawViaList.length > 0) {
               const { data: existingStops } = await supabase
                 .from("stops")
                 .select("name")
@@ -952,7 +1588,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               const existingSet = new Set(
                 (existingStops || []).map((s: any) => s.name?.toLowerCase().trim())
               );
-              const newStops = viaStops
+              const newStops = rawViaList
                 .filter((s: string) => !existingSet.has(s.toLowerCase()))
                 .map((s: string) => ({
                   name: s,
@@ -1365,9 +2001,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               </div>
             </div>
 
-            {/* ------------------------------------------------------- */}
-            {/* COLUMN 1: ROUTE SETUP                                   */}
-            {/* ------------------------------------------------------- */}
+            {selectedTab !== Tab.STOPS ? (
+              <>
+                {/* ------------------------------------------------------- */}
+                {/* COLUMN 1: ROUTE SETUP                                   */}
+                {/* ------------------------------------------------------- */}
             <div className="flex flex-col flex-none w-[280px] lg:w-[310px] border-r border-border bg-card overflow-hidden">
               {/* Header */}
               <div className="flex h-11 flex-none items-center justify-between border-b border-border px-4 bg-card">
@@ -1461,61 +2099,289 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                   </div>
                 )}
 
-                {/* Source & Destination (2-Column Grid) */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground truncate block">
+                {/* Source Stop Picker */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
                       Source (Origin)
                     </label>
+                    {canSelectStops && depotStops.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSourceInputMode((prev) => (prev === "select" ? "manual" : "select"))
+                        }
+                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {sourceInputMode === "select" ? (
+                          <>
+                            <Pencil className="h-2.5 w-2.5" /> Custom
+                          </>
+                        ) : (
+                          <>
+                            <ListFilter className="h-2.5 w-2.5" /> Catalog
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {sourceInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
+                    <Select
+                      value={sourceVal}
+                      onValueChange={(val) => {
+                        if (val) setValue("source", val, { shouldDirty: true });
+                      }}
+                      items={sourceSelectItems}
+                    >
+                      <SelectTrigger className="w-full h-8 px-2.5 text-xs font-medium">
+                        <SelectValue placeholder="Select origin stop..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sourceSelectItems.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
                     <Input
-                      placeholder="KEMPEGOWDA BS"
+                      placeholder="e.g. KEMPEGOWDA BS"
                       className="h-8 text-xs font-medium"
-                      list="depot-stops-source-list"
                       {...register("source")}
                     />
-                    <datalist id="depot-stops-source-list">
-                      {depotStops.map((s) => (
-                        <option key={s.id} value={s.name} />
-                      ))}
-                    </datalist>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground truncate block">
-                      Destination (Terminus)
-                    </label>
-                    <Input
-                      placeholder="KADUGODI BS"
-                      className="h-8 text-xs font-medium"
-                      list="depot-stops-dest-list"
-                      {...register("destination")}
-                    />
-                    <datalist id="depot-stops-dest-list">
-                      {depotStops.map((s) => (
-                        <option key={s.id} value={s.name} />
-                      ))}
-                    </datalist>
-                  </div>
+                  )}
                 </div>
 
-                {/* Via */}
+                {/* Destination Stop Picker */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground">Via (Waypoints)</label>
-                  <Input
-                    placeholder="DOMNUR, MARATHAHALLI, HOPE FARM"
-                    className="h-8 text-xs font-medium"
-                    list="depot-stops-via-list"
-                    {...register("via")}
-                  />
-                  <datalist id="depot-stops-via-list">
-                    {depotStops.map((s) => (
-                      <option key={s.id} value={s.name} />
-                    ))}
-                  </datalist>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-rose-500 shrink-0" />
+                      Destination (Terminus)
+                    </label>
+                    {canSelectStops && depotStops.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDestInputMode((prev) => (prev === "select" ? "manual" : "select"))
+                        }
+                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {destInputMode === "select" ? (
+                          <>
+                            <Pencil className="h-2.5 w-2.5" /> Custom
+                          </>
+                        ) : (
+                          <>
+                            <ListFilter className="h-2.5 w-2.5" /> Catalog
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {destInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
+                    <Select
+                      value={destVal}
+                      onValueChange={(val) => {
+                        if (val) setValue("destination", val, { shouldDirty: true });
+                      }}
+                      items={destSelectItems}
+                    >
+                      <SelectTrigger className="w-full h-8 px-2.5 text-xs font-medium">
+                        <SelectValue placeholder="Select terminus stop..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {destSelectItems.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      placeholder="e.g. KADUGODI BS"
+                      className="h-8 text-xs font-medium"
+                      {...register("destination")}
+                    />
+                  )}
+                </div>
+
+                {/* Via (Waypoints) Section */}
+                <div className="space-y-2 pt-1 border-t border-border/60">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <MapPin className="h-3 w-3 text-primary" />
+                      Via (Waypoints)
+                      {viaStops.length > 0 && (
+                        <span className="text-[10px] font-mono font-medium px-1.5 py-0.2 rounded-full bg-primary/10 text-primary">
+                          {viaStops.length}
+                        </span>
+                      )}
+                    </label>
+                    {canSelectStops && depotStops.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setViaInputMode((prev) => (prev === "select" ? "manual" : "select"))
+                        }
+                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        {viaInputMode === "select" ? (
+                          <>
+                            <Pencil className="h-2.5 w-2.5" /> Custom
+                          </>
+                        ) : (
+                          <>
+                            <ListFilter className="h-2.5 w-2.5" /> Catalog
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Via Adder: Dropdown or Manual */}
+                  {viaInputMode === "select" && canSelectStops && depotStops.length > 0 ? (
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={selectedViaPickerId}
+                        onValueChange={(val) => {
+                          if (val) handleAddViaFromSelect(val);
+                        }}
+                        items={viaSelectItems}
+                      >
+                        <SelectTrigger className="w-full h-8 px-2.5 text-xs font-medium">
+                          <SelectValue
+                            placeholder={
+                              availableViaStops.length > 0
+                                ? "+ Add via from catalog..."
+                                : "All catalog stops selected"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {viaSelectItems.length === 0 ? (
+                            <div className="p-2 text-center text-xs text-muted-foreground">
+                              No remaining catalog stops
+                            </div>
+                          ) : (
+                            viaSelectItems.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                {opt.label}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        placeholder="Type via stop name..."
+                        value={customViaInput}
+                        onChange={(e) => setCustomViaInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddCustomVia();
+                          }
+                        }}
+                        className="h-8 text-xs font-medium flex-1"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 px-2.5 text-xs font-medium shrink-0"
+                        onClick={handleAddCustomVia}
+                        disabled={!customViaInput.trim()}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" /> Add
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Reorderable Via List */}
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                    {viaStops.length === 0 ? (
+                      <div className="rounded-md border border-dashed border-border/70 py-2 text-center text-[11px] text-muted-foreground">
+                        Direct route (no intermediate via stops)
+                      </div>
+                    ) : (
+                      viaStops.map((via, idx) => {
+                        const isDragged = draggedViaIdx === idx;
+                        const isDragOver = dragOverViaIdx === idx;
+                        return (
+                          <div
+                            key={via.id || idx}
+                            draggable
+                            onDragStart={() => handleViaDragStart(idx)}
+                            onDragOver={(e) => handleViaDragOver(e, idx)}
+                            onDrop={() => handleViaDrop(idx)}
+                            className={cn(
+                              "flex items-center justify-between gap-1.5 p-1.5 px-2 rounded-md border text-xs transition-colors",
+                              isDragOver
+                                ? "border-primary bg-primary/10"
+                                : isDragged
+                                ? "opacity-40 border-dashed border-muted-foreground bg-muted"
+                                : "border-border bg-muted/40 hover:bg-muted/80"
+                            )}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60 cursor-grab active:cursor-grabbing shrink-0" />
+                              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary shrink-0">
+                                {idx + 1}
+                              </span>
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-medium text-foreground truncate text-xs">
+                                  {via.name}
+                                </span>
+                                {via.name_kn && (
+                                  <span className="text-[10px] text-muted-foreground truncate">
+                                    {via.name_kn}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => handleMoveViaUp(idx)}
+                                className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                                title="Move waypoint up"
+                              >
+                                <ArrowUp className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === viaStops.length - 1}
+                                onClick={() => handleMoveViaDown(idx)}
+                                className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                                title="Move waypoint down"
+                              >
+                                <ArrowDown className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveVia(idx)}
+                                className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive cursor-pointer"
+                                title="Remove waypoint"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
 
                 {/* Route Separator */}
-                <div className="space-y-1">
+                <div className="space-y-1 pt-1 border-t border-border/60">
                   <label className="text-xs font-semibold text-foreground">Route Separator</label>
                   <Select
                     value={separation || "-"}
@@ -1535,6 +2401,67 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+
+                {/* Live Route Journey Sequence Overview */}
+                <div className="pt-2 border-t border-border/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <GitBranch className="h-3.5 w-3.5 text-primary" /> Journey Flow
+                    </span>
+                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                      {1 + viaStops.length + 1} Waypoints
+                    </span>
+                  </div>
+
+                  <div className="rounded-lg border border-border/70 bg-muted/20 p-2.5 space-y-1">
+                    {/* Origin Stop */}
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0 ring-2 ring-emerald-500/20" />
+                      <span className="text-xs font-semibold text-foreground truncate">
+                        {sourceVal || <span className="text-muted-foreground italic">Origin</span>}
+                      </span>
+                      <span className="ml-auto text-[9px] font-semibold uppercase px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+                        Source
+                      </span>
+                    </div>
+
+                    {/* Vias Rail */}
+                    {viaStops.length > 0 ? (
+                      <div className="ml-1 pl-2.5 border-l-2 border-border/80 space-y-1.5 my-1">
+                        {viaStops.map((via, i) => (
+                          <div key={via.id || i} className="flex items-center gap-2 py-0.5">
+                            <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary/10 text-[9px] font-bold text-primary shrink-0">
+                              {i + 1}
+                            </span>
+                            <span className="text-xs text-foreground/90 truncate flex-1">
+                              {via.name}
+                            </span>
+                            <span className="text-[9px] font-mono text-muted-foreground shrink-0">
+                              Via #{i + 1}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="ml-1 pl-2.5 border-l-2 border-dashed border-border/60 py-1 my-0.5">
+                        <span className="text-[10px] italic text-muted-foreground/70">
+                          Non-stop direct trip
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Terminus Stop */}
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-500 shrink-0 ring-2 ring-rose-500/20" />
+                      <span className="text-xs font-semibold text-foreground truncate">
+                        {destVal || <span className="text-muted-foreground italic">Terminus</span>}
+                      </span>
+                      <span className="ml-auto text-[9px] font-semibold uppercase px-1 py-0.2 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
+                        Dest
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2108,34 +3035,36 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         </ToggleGroup>
                       </SettingRow>
 
-                      <SettingRow label="Change Slide Format">
-                        <ToggleGroup
-                          size="sm"
-                          variant="outline"
-                          spacing={2}
-                          className="w-full flex"
-                          value={[currentFormat]}
-                          onValueChange={(val) => {
-                            if (val.length > 0) handleFormatChange(val[0] as SimulationFormat);
-                          }}
-                        >
-                          <ActionTooltip content="Single line text" side="top">
-                            <ToggleGroupItem value="single" aria-label="Single line" className="flex-1 text-xs">
-                              Single
-                            </ToggleGroupItem>
-                          </ActionTooltip>
-                          <ActionTooltip content="Route number + text" side="top">
-                            <ToggleGroupItem value="two" aria-label="Two line" className="flex-1 text-xs">
-                              Two Line
-                            </ToggleGroupItem>
-                          </ActionTooltip>
-                          <ActionTooltip content="Route number + upper & lower lines" side="top">
-                            <ToggleGroupItem value="three" aria-label="Three line" className="flex-1 text-xs">
-                              Three Line
-                            </ToggleGroupItem>
-                          </ActionTooltip>
-                        </ToggleGroup>
-                      </SettingRow>
+                      {selectedTab !== Tab.INTERNAL && (
+                        <SettingRow label="Change Slide Format">
+                          <ToggleGroup
+                            size="sm"
+                            variant="outline"
+                            spacing={2}
+                            className="w-full flex"
+                            value={[currentFormat]}
+                            onValueChange={(val) => {
+                              if (val.length > 0) handleFormatChange(val[0] as SimulationFormat);
+                            }}
+                          >
+                            <ActionTooltip content="Single line text" side="top">
+                              <ToggleGroupItem value="single" aria-label="Single line" className="flex-1 text-xs">
+                                Single
+                              </ToggleGroupItem>
+                            </ActionTooltip>
+                            <ActionTooltip content="Route number + text" side="top">
+                              <ToggleGroupItem value="two" aria-label="Two line" className="flex-1 text-xs">
+                                Two Line
+                              </ToggleGroupItem>
+                            </ActionTooltip>
+                            <ActionTooltip content="Route number + upper & lower lines" side="top">
+                              <ToggleGroupItem value="three" aria-label="Three line" className="flex-1 text-xs">
+                                Three Line
+                              </ToggleGroupItem>
+                            </ActionTooltip>
+                          </ToggleGroup>
+                        </SettingRow>
+                      )}
                     </div>
 
                     {/* ADVANCED RENDERING */}
@@ -2216,6 +3145,301 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                 </div>
               )}
             </div>
+          </>
+        ) : (
+          /* ------------------------------------------------------- */
+          /* STOP ANNOUNCEMENT SIMULATOR PANEL (Tab.STOPS)           */
+          /* ------------------------------------------------------- */
+          <div className="flex flex-col flex-none w-[380px] lg:w-[440px] xl:w-[480px] border-r border-border bg-card overflow-hidden">
+            {/* Simulator Header */}
+            <div className="flex h-11 flex-none items-center justify-between border-b border-border px-4 bg-card">
+              <div className="flex items-center gap-2">
+                <Volume2 className="h-4 w-4 text-primary" />
+                <span className="text-sm font-bold text-foreground">
+                  Stop Announcement Simulator
+                </span>
+              </div>
+              {playbackPhase === "playing_stage" ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20 animate-pulse">
+                  <Radio className="h-3 w-3 animate-pulse" /> Playing Stage
+                </span>
+              ) : playbackPhase === "playing_stop" ? (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 animate-pulse">
+                  <Volume2 className="h-3 w-3 animate-pulse" /> Playing Stop
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
+                  Idle
+                </span>
+              )}
+            </div>
+
+            {/* Simulator Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Info Notice */}
+              <div className="p-3 rounded-xl bg-muted/40 border border-border text-xs text-muted-foreground leading-relaxed">
+                Simulate synchronized LED signboard scrolling and chained voice announcements (<span className="font-semibold text-foreground">Stage Intro + Stop Name</span>) as broadcast to transit passengers.
+              </div>
+
+              {/* 1. Stop Selector */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-foreground">
+                    1. Select Route Stop
+                  </label>
+                  <span className="text-[10px] font-medium text-muted-foreground">
+                    {effectiveSimStops.length} {effectiveSimStops.length === 1 ? "stop" : "stops"} available
+                  </span>
+                </div>
+
+                {effectiveSimStops.length === 0 ? (
+                  <div className="p-3 rounded-lg border border-dashed border-border bg-muted/20 text-xs text-muted-foreground text-center">
+                    No route stops found. Configure Source, Destination, or Via stops in Route Setup.
+                  </div>
+                ) : (
+                  <Select
+                    value={simStopId}
+                    onValueChange={(val) => {
+                      if (val) setSimStopId(val);
+                    }}
+                    items={simStopSelectItems}
+                  >
+                    <SelectTrigger className="w-full h-9 px-3 text-xs bg-background">
+                      <SelectValue placeholder="Select a stop..." />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {effectiveSimStops.map((stop) => {
+                        const hasAudio = !!stop.stopAudioUrl;
+                        return (
+                          <SelectItem key={stop.id} value={stop.id} className="text-xs py-2">
+                            <div className="flex items-center justify-between w-full gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <span className="font-medium text-foreground truncate">{stop.label}</span>
+                                {stop.name_kn && (
+                                  <span className="text-[11px] text-muted-foreground truncate">
+                                    ({stop.name_kn})
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0 ml-auto">
+                                {hasAudio ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                                    <Volume2 className="h-2.5 w-2.5" /> Audio
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground bg-muted border border-border px-1.5 py-0.5 rounded">
+                                    <VolumeX className="h-2.5 w-2.5" /> No Audio
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* 2. Announcement Stage */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">
+                  2. Announcement Stage
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: "current", label: "Current", sub: "Current stop is" },
+                    { id: "next", label: "Next", sub: "Next stop is" },
+                    { id: "arriving", label: "Arriving", sub: "Arriving at" },
+                  ].map((stg) => {
+                    const isSelected = simStage === stg.id;
+                    return (
+                      <button
+                        key={stg.id}
+                        type="button"
+                        onClick={() => setSimStage(stg.id as any)}
+                        className={cn(
+                          "flex flex-col items-center justify-center p-2.5 rounded-xl border text-left transition-all cursor-pointer select-none",
+                          isSelected
+                            ? "bg-primary/10 border-primary text-primary font-semibold ring-1 ring-primary shadow-xs"
+                            : "bg-card border-border hover:border-muted-foreground/50 text-foreground hover:bg-muted/40"
+                        )}
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                          <div
+                            className={cn(
+                              "h-3 w-3 rounded-full border flex items-center justify-center shrink-0",
+                              isSelected
+                                ? "border-primary bg-primary"
+                                : "border-muted-foreground/60"
+                            )}
+                          >
+                            {isSelected && (
+                              <div className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
+                            )}
+                          </div>
+                          <span>{stg.label}</span>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground mt-1 text-center font-normal">
+                          "{stg.sub}..."
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Language Selector */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-foreground">
+                  3. Announcement Language
+                </label>
+                <Select
+                  value={simLanguage}
+                  onValueChange={(val) => {
+                    if (val) setSimLanguage(val);
+                  }}
+                  items={languageItems}
+                >
+                  <SelectTrigger className="w-full h-8 px-2.5 text-xs bg-background">
+                    <SelectValue placeholder="Select Language" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {languageItems.map((l) => (
+                      <SelectItem key={l.value} value={l.value} className="text-xs">
+                        {l.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 4. Audio Pipeline Diagnostics Card */}
+              <div className="flex flex-col rounded-xl border border-border bg-card p-3.5 space-y-3">
+                <div className="flex items-center justify-between border-b border-border pb-2">
+                  <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                    Audio Pipeline Diagnostics
+                  </span>
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    Chained Playback
+                  </span>
+                </div>
+
+                {/* Stage Audio Status */}
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    {stageAudioUrl ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                    )}
+                    <span className="font-medium text-foreground">Stage Audio</span>
+                  </div>
+                  {stageAudioUrl ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      {matchedStageAudio ? "Database Audio Ready" : "Static Preset Ready"}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      Stage Audio Not Available
+                    </span>
+                  )}
+                </div>
+
+                {/* Stop Audio Status */}
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    {stopAudioUrl ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                    )}
+                    <span className="font-medium text-foreground">Stop Audio</span>
+                  </div>
+                  {stopAudioUrl ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      Stop Audio Ready
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      Stop Audio Not Available
+                    </span>
+                  )}
+                </div>
+
+                {/* Live Announcement Output Preview */}
+                <div className="flex flex-col gap-1.5 pt-1 border-t border-border/60">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Live Announcement Output
+                  </span>
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/60 font-mono text-xs font-semibold text-foreground border border-border">
+                    <Volume2
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        playbackPhase !== "idle" ? "text-primary animate-pulse" : "text-muted-foreground"
+                      )}
+                    />
+                    <span className="truncate">
+                      {selectedSimStop
+                        ? computeAnnouncementText(selectedSimStop, simStage, simLanguage)
+                        : "—"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Manual Audio Action Controls */}
+                <div className="flex items-center gap-2 pt-2 border-t border-border/60">
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="flex-1 h-8 text-xs font-medium cursor-pointer"
+                    onClick={() => playChainedAudio(stageAudioUrl, stopAudioUrl)}
+                    disabled={!stageAudioUrl && !stopAudioUrl}
+                  >
+                    <Play className="h-3.5 w-3.5 mr-1.5" /> Replay Announcement
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-medium px-3 cursor-pointer text-foreground"
+                    onClick={stopChainedAudio}
+                    disabled={playbackPhase === "idle"}
+                  >
+                    <Square className="h-3.5 w-3.5 mr-1" /> Stop
+                  </Button>
+                </div>
+              </div>
+
+              {/* 5. LED Signboard Display Spec */}
+              <div className="flex flex-col rounded-xl border border-border bg-card p-3 space-y-2">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Signboard Display Spec
+                </span>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
+                    <span className="text-[10px] text-muted-foreground">Format</span>
+                    <span className="font-semibold text-foreground">Single Line</span>
+                  </div>
+                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
+                    <span className="text-[10px] text-muted-foreground">Scroll Type</span>
+                    <span className="font-semibold text-foreground">Right To Left</span>
+                  </div>
+                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
+                    <span className="text-[10px] text-muted-foreground">Text Height</span>
+                    <span className="font-semibold text-foreground">16 px</span>
+                  </div>
+                  <div className="flex flex-col p-2 rounded-lg bg-muted/50 border border-border">
+                    <span className="text-[10px] text-muted-foreground">Scroll Speed</span>
+                    <span className="font-semibold text-foreground">4 (Normal)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
             {/* ------------------------------------------------------- */}
             {/* COLUMN 3: SLIDES LOOP                                   */}
@@ -2224,72 +3448,85 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               {/* Header */}
               <div className="flex min-h-11 flex-none flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-border px-4 py-1.5 bg-card">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm font-bold text-foreground">Slides Loop</span>
+                  <span className="text-sm font-bold text-foreground">
+                    {selectedTab === Tab.STOPS ? "Stop Announcement Simulation" : "Slides Loop"}
+                  </span>
                   <span className="px-2 py-0.5 rounded-full bg-muted text-foreground border border-border font-mono text-[11px] font-bold">
                     {simulations.length}
                   </span>
-                
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <ActionTooltip
-                    content={
-                      isCycling
-                        ? "Stop the automatic slide preview"
-                        : "Preview the loop: the LED board steps through each slide automatically (3.5s per slide)"
-                    }
-                    side="bottom"
-                  >
-                    <Button
-                      variant={isCycling ? "default" : "outline"}
-                      size="sm"
-                      className="h-7 text-xs font-medium px-2.5"
-                      disabled={!isCycling && simulations.length <= 1}
-                      onClick={() => setIsCycling(!isCycling)}
+                  {selectedTab === Tab.STOPS ? (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
+                      <Radio className="h-3 w-3 animate-pulse" /> Live Simulator
+                    </div>
+                  ) : (
+                    <ActionTooltip
+                      content={
+                        isCycling
+                          ? "Stop the automatic slide preview"
+                          : "Preview the loop: the LED board steps through each slide automatically (3.5s per slide)"
+                      }
+                      side="bottom"
                     >
-                      {isCycling ? <Pause className="h-3 w-3 mr-1" /> : <Play className="h-3 w-3 mr-1" />}
-                      {isCycling ? "Stop Playing" : "Play Slides"}
-                    </Button>
-                  </ActionTooltip>
+                      <Button
+                        variant={isCycling ? "default" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs font-medium px-2.5"
+                        disabled={!isCycling && simulations.length <= 1}
+                        onClick={() => setIsCycling(!isCycling)}
+                      >
+                        {isCycling ? <Pause className="h-3 w-3 mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                        {isCycling ? "Stop Playing" : "Play Slides"}
+                      </Button>
+                    </ActionTooltip>
+                  )}
 
                   {/* Add Slide Dropdown */}
-                  <DropdownMenu>
-                    <ActionTooltip content="Add a new slide to this signboard loop" side="bottom">
-                      <DropdownMenuTrigger
-                        type="button"
-                        className="h-7 text-xs font-semibold px-2.5 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-                      >
-                        <Plus className="h-3 w-3 mr-1" /> Add Slide
-                      </DropdownMenuTrigger>
-                    </ActionTooltip>
-                    <DropdownMenuContent align="end" className="min-w-[200px]">
-                      <DropdownMenuItem onClick={() => handleAddSlide("single")}>
-                        <Layers className="h-3.5 w-3.5 text-primary mr-2" />
-                        <span>Add Single-Line Route</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleAddSlide("two")}>
-                        <Columns className="h-3.5 w-3.5 text-primary mr-2" />
-                        <span>Add Two-Line Route</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleAddSlide("three")}>
-                        <Layers className="h-3.5 w-3.5 text-primary mr-2" />
-                        <span>Add Three-Line Route</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => handleAddSlide("single", "slogan")}>
-                        <MessageSquare className="h-3.5 w-3.5 text-amber-500 mr-2" />
-                        <span>Add Slogan / Announcement</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleAddSlide("single", "special message")}>
-                        <Mic className="h-3.5 w-3.5 text-amber-500 mr-2" />
-                        <span>Add Special Message</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {selectedTab !== Tab.STOPS && (
+                    <DropdownMenu>
+                      <ActionTooltip content="Add a new slide to this signboard loop" side="bottom">
+                        <DropdownMenuTrigger
+                          type="button"
+                          className="h-7 text-xs font-semibold px-2.5 inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
+                        >
+                          <Plus className="h-3 w-3 mr-1" /> Add Slide
+                        </DropdownMenuTrigger>
+                      </ActionTooltip>
+                      <DropdownMenuContent align="end" className="min-w-[200px]">
+                        {selectedTab !== Tab.INTERNAL && (
+                          <>
+                            <DropdownMenuItem onClick={() => handleAddSlide("single")}>
+                              <Layers className="h-3.5 w-3.5 text-primary mr-2" />
+                              <span>Add Single-Line Route</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleAddSlide("two")}>
+                              <Columns className="h-3.5 w-3.5 text-primary mr-2" />
+                              <span>Add Two-Line Route</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleAddSlide("three")}>
+                              <Layers className="h-3.5 w-3.5 text-primary mr-2" />
+                              <span>Add Three-Line Route</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
+                        <DropdownMenuItem onClick={() => handleAddSlide("single", "slogan")}>
+                          <MessageSquare className="h-3.5 w-3.5 text-amber-500 mr-2" />
+                          <span>Add Slogan / Announcement</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleAddSlide("single", "special message")}>
+                          <Mic className="h-3.5 w-3.5 text-amber-500 mr-2" />
+                          <span>Add Special Message</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
 
                   {/* Copy Slide Dropdown */}
-                  {simulations.length > 0 && currentSimulation && (
+                  {selectedTab !== Tab.INTERNAL && selectedTab !== Tab.STOPS && simulations.length > 0 && currentSimulation && (
                     <DropdownMenu>
                       <ActionTooltip content="Copy the selected slide to another signboard" side="bottom">
                         <DropdownMenuTrigger
@@ -2303,7 +3540,9 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         <DropdownMenuLabel className="text-[10px] uppercase font-bold text-muted-foreground">
                           Copy Slide #{safeSimulationIndex + 1} To:
                         </DropdownMenuLabel>
-                        {BOARD_ITEMS.filter((b) => b.id !== selectedTab && b.id !== Tab.STOPS).map((b) => (
+                        {BOARD_ITEMS.filter(
+                          (b) => b.id !== selectedTab && b.id !== Tab.STOPS && b.id !== Tab.INTERNAL
+                        ).map((b) => (
                           <DropdownMenuItem key={b.id} onClick={() => handleCopySlideToBoard(b.id)}>
                             <span className="w-4 text-center font-bold text-[11px] text-foreground mr-1.5">
                               {b.letter}
@@ -2316,7 +3555,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                   )}
 
                   {/* Copy All Dropdown */}
-                  {simulations.length > 0 && (
+                  {selectedTab !== Tab.INTERNAL && selectedTab !== Tab.STOPS && simulations.length > 0 && (
                     <DropdownMenu>
                       <ActionTooltip content="Copy all slides to another signboard display" side="bottom">
                         <DropdownMenuTrigger
@@ -2330,7 +3569,9 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         <DropdownMenuLabel className="text-[10px] uppercase font-bold text-muted-foreground">
                           Copy All Slides To:
                         </DropdownMenuLabel>
-                        {BOARD_ITEMS.filter((b) => b.id !== selectedTab && b.id !== Tab.STOPS).map((b) => (
+                        {BOARD_ITEMS.filter(
+                          (b) => b.id !== selectedTab && b.id !== Tab.STOPS && b.id !== Tab.INTERNAL
+                        ).map((b) => (
                           <DropdownMenuItem key={b.id} onClick={() => handleCopyAllToBoard(b.id)}>
                             <span className="w-4 text-center font-bold text-[11px] text-foreground mr-1.5">
                               {b.letter}
@@ -2342,16 +3583,18 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     </DropdownMenu>
                   )}
 
-                  <ActionTooltip content="Delete all slides from current signboard loop" side="bottom">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-7 text-xs font-medium px-2.5"
-                      onClick={handleClearAllSlides}
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" /> Clear All
-                    </Button>
-                  </ActionTooltip>
+                  {selectedTab !== Tab.STOPS && (
+                    <ActionTooltip content="Delete all slides from current signboard loop" side="bottom">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-7 text-xs font-medium px-2.5"
+                        onClick={handleClearAllSlides}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" /> Clear All
+                      </Button>
+                    </ActionTooltip>
+                  )}
                 </div>
               </div>
 
@@ -2421,134 +3664,6 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                   </div>
                 </div>
               </div>
-
-              {/* Special Generator for Stops Tab */}
-              {selectedTab === Tab.STOPS && (
-                <div className="flex flex-col gap-2 p-3 bg-primary/5 border-b border-primary/20">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="w-32">
-                      <Select
-                        value={stopLanguage}
-                        onValueChange={(val) => {
-                          if (val) setStopLanguage(val);
-                        }}
-                        items={languageItems}
-                      >
-                        <SelectTrigger className="w-full h-8 px-2.5 text-xs">
-                          <SelectValue placeholder="Language" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-60">
-                          {languageItems.map((l) => (
-                            <SelectItem key={l.value} value={l.value} className="text-xs">
-                              {l.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="w-40">
-                      <Select
-                        value={stopUpDown}
-                        onValueChange={(val) => {
-                          if (val) setStopUpDown(val as "up" | "down");
-                        }}
-                        items={[
-                          { value: "up", label: "Forward (Up)" },
-                          { value: "down", label: "Return (Down)" },
-                        ]}
-                      >
-                        <SelectTrigger className="w-full h-8 px-2.5 text-xs">
-                          <SelectValue placeholder="Direction" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="up" className="text-xs">Forward (Up)</SelectItem>
-                          <SelectItem value="down" className="text-xs">Return (Down)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {depotStops.length > 0 && (
-                      <div className="flex-1 min-w-[160px]">
-                        <Select
-                          value={selectedStop?.id || ""}
-                          onValueChange={(val) =>
-                            setSelectedStop(depotStops.find((s) => s.id === val) || null)
-                          }
-                          items={depotStops.map((s) => ({ value: s.id, label: s.name }))}
-                        >
-                          <SelectTrigger className="w-full h-8 px-2.5 text-xs">
-                            <SelectValue placeholder="Select Stop" />
-                          </SelectTrigger>
-                          <SelectContent className="max-h-60">
-                            {depotStops.map((s) => (
-                              <SelectItem key={s.id} value={s.id} className="text-xs">
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-
-                    <ActionTooltip content="Generate stop announcement slides for selected stop types" side="bottom">
-                      <Button
-                        size="sm"
-                        className="h-8 text-xs font-medium px-3"
-                        disabled={!selectedStop || selectedStopTypes.length === 0}
-                        onClick={() => {
-                          if (!selectedStop || selectedStopTypes.length === 0) return;
-                          const newSims = selectedStopTypes.map((stopType) => {
-                            const text = `${stopType.toUpperCase()} STOP: ${selectedStop.name.toUpperCase()}`;
-                            return getDefaultStopSingleSimulation(
-                              text,
-                              "stop",
-                              stopType,
-                              selectedStop,
-                              stopLanguage,
-                              stopUpDown
-                            );
-                          });
-                          const curList: Simulation[] = getValues(selectedTab as any) || [];
-                          const updatedList = [...curList, ...newSims];
-                          setValue(selectedTab as any, updatedList, { shouldDirty: true });
-                          setSelectedSimulationIndex(updatedList.length - 1);
-                        }}
-                      >
-                        Generate Stop Slide
-                      </Button>
-                    </ActionTooltip>
-                  </div>
-
-                  {/* Stop types checkboxes */}
-                  <div className="flex items-center gap-3 pt-1">
-                    <span className="text-[11px] font-semibold text-foreground">Stop Types:</span>
-                    {stopStates.map((st) => {
-                      const checked = selectedStopTypes.includes(st);
-                      return (
-                        <label
-                          key={st}
-                          className="flex items-center gap-1.5 text-xs text-foreground font-medium cursor-pointer capitalize"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedStopTypes((prev) => [...prev, st]);
-                              } else {
-                                setSelectedStopTypes((prev) => prev.filter((x) => x !== st));
-                              }
-                            }}
-                            className="rounded border-input text-primary focus:ring-ring h-3.5 w-3.5"
-                          />
-                          {st}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {/* Slides Loop Card Stack */}
               <div className="flex-1 overflow-y-auto p-4 pb-20 space-y-3">
@@ -2624,53 +3739,59 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                           </div>
 
                           {/* Reorder & Action Buttons */}
-                          <div
-                            className="flex items-center gap-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ActionTooltip content="Move slide up in playback sequence" side="top">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-7 w-7 text-foreground"
-                                disabled={index === 0}
-                                onClick={() => handleMoveSlide(index, "up")}
-                              >
-                                <ChevronUp className="h-3.5 w-3.5" />
-                              </Button>
-                            </ActionTooltip>
-                            <ActionTooltip content="Move slide down in playback sequence" side="top">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-7 w-7 text-foreground"
-                                disabled={index === simulations.length - 1}
-                                onClick={() => handleMoveSlide(index, "down")}
-                              >
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              </Button>
-                            </ActionTooltip>
-                            <ActionTooltip content="Duplicate this slide" side="top">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="h-7 w-7 text-foreground"
-                                onClick={() => handleDuplicateSlide(index)}
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </Button>
-                            </ActionTooltip>
-                            <ActionTooltip content="Delete this slide from loop" side="top">
-                              <Button
-                                variant="destructive"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => handleRemoveSlide(index)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </ActionTooltip>
-                          </div>
+                          {selectedTab === Tab.STOPS ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                              Live Simulator Slide
+                            </span>
+                          ) : (
+                            <div
+                              className="flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <ActionTooltip content="Move slide up in playback sequence" side="top">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7 text-foreground"
+                                  disabled={index === 0}
+                                  onClick={() => handleMoveSlide(index, "up")}
+                                >
+                                  <ChevronUp className="h-3.5 w-3.5" />
+                                </Button>
+                              </ActionTooltip>
+                              <ActionTooltip content="Move slide down in playback sequence" side="top">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7 text-foreground"
+                                  disabled={index === simulations.length - 1}
+                                  onClick={() => handleMoveSlide(index, "down")}
+                                >
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                </Button>
+                              </ActionTooltip>
+                              <ActionTooltip content="Duplicate this slide" side="top">
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7 text-foreground"
+                                  onClick={() => handleDuplicateSlide(index)}
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                              </ActionTooltip>
+                              <ActionTooltip content="Delete this slide from loop" side="top">
+                                <Button
+                                  variant="destructive"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => handleRemoveSlide(index)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </ActionTooltip>
+                            </div>
+                          )}
                         </div>
 
                         {/* Slide Card Body Zones */}
@@ -2709,7 +3830,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                           <div className="flex flex-col gap-2">
                             <div className="flex flex-col p-2.5 rounded-lg bg-muted/60 border border-border">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-0.5">
-                                DESTINATION TEXT ZONE
+                                {selectedTab === Tab.STOPS ? "ANNOUNCEMENT SCROLL TEXT" : "DESTINATION TEXT ZONE"}
                               </span>
                               <span className="text-xs font-semibold text-foreground truncate">
                                 {singleText || "—"}
@@ -2717,18 +3838,41 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                               <span className="text-[10px] text-muted-foreground font-mono mt-1 truncate">
                                 Font: {texts.text?.fontHeight || 14}px (
                                 {texts.text?.fontWeight || "Bold"}) • Scroll:{" "}
-                                {texts.text?.scrollType || "Right To Left"} • Lang:{" "}
+                                {texts.text?.scrollType || "Right To Left"} • Speed: {texts.text?.scrollSpeed ?? 4} • Lang:{" "}
                                 {(texts.text?.language || "en").toUpperCase()}
                               </span>
                             </div>
 
-                            {sim.audioFileUrl && (
-                              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300 font-mono">
-                                <Volume2 className="h-3 w-3 text-amber-500 flex-none" />
-                                <span className="truncate">
-                                  TTS: {texts.text?.text} ({sim.audioFileName || "audio.mp3"})
-                                </span>
+                            {selectedTab === Tab.STOPS ? (
+                              <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                                {stageAudioUrl ? (
+                                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                    <Volume2 className="h-3 w-3 shrink-0" /> Stage Audio: {matchedStageAudio ? "Database" : "Preset"}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                    <VolumeX className="h-3 w-3 shrink-0" /> Stage Audio: None
+                                  </div>
+                                )}
+                                {stopAudioUrl ? (
+                                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                    <Volume2 className="h-3 w-3 shrink-0" /> Stop Audio: Ready
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                    <VolumeX className="h-3 w-3 shrink-0" /> Stop Audio: None
+                                  </div>
+                                )}
                               </div>
+                            ) : (
+                              sim.audioFileUrl && (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300 font-mono">
+                                  <Volume2 className="h-3 w-3 text-amber-500 flex-none" />
+                                  <span className="truncate">
+                                    TTS: {texts.text?.text} ({sim.audioFileName || "audio.mp3"})
+                                  </span>
+                                </div>
+                              )
                             )}
                           </div>
                         ) : (

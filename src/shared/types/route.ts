@@ -13,6 +13,7 @@ export interface IRoute {
   rear: string | any[];
   internal: string | any[];
   stops: string | any[];
+  stage_audios?: string | any[];
   created_at: string;
   updated_at?: string;
   organization_id?: string | null;

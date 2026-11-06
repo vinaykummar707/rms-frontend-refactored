@@ -232,6 +232,7 @@ export async function exportRoutes(
     rear: parseRouteSignboardField(r.rear),
     internal: parseRouteSignboardField(r.internal),
     stops: parseRouteSignboardField(r.stops),
+    stage_audios: parseRouteSignboardField((r as any).stage_audios),
   }));
 
   const currentDate = new Date().toISOString().split("T")[0];

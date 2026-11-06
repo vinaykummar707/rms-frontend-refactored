@@ -3,12 +3,14 @@ import {
   computeSyncAnnouncementText,
   getTransliteratedAnnouncementText,
   generateRouteStopRecords,
+  generateRouteStageAudioRecords,
   transliterateStopText,
   transliterationCache,
   type RouteSimStopOption,
 } from "../utils/routeAnnouncementTransliteration";
 import * as transliterationModule from "@/shared/utils/transliteration";
 import * as bitmapModule from "@/features/bitmap/services/bitmapService";
+import type { IStageAudio } from "@/shared/types/stageAudio";
 
 describe("Route Announcement Transliteration", () => {
   const sampleStopWithKn: RouteSimStopOption = {
@@ -214,6 +216,95 @@ describe("Route Announcement Transliteration", () => {
         translitaratedtext: "गच्चीबौली",
         bitmap: "00110011",
       });
+    });
+  });
+
+  describe("generateRouteStageAudioRecords", () => {
+    it("generates structured stage audio records for current, next, and arriving across desired languages", async () => {
+      vi.spyOn(bitmapModule, "fetchBitmapMatrix").mockResolvedValue("11001100");
+
+      const customDbStageAudios: IStageAudio[] = [
+        {
+          id: "sa-1",
+          language: "kn",
+          stage_type: "current_stop",
+          stage_label: "Current Stop",
+          reference_text: "Current Stop Is",
+          announcement_text: "ಕಸ್ಟಮ್ ಪ್ರಸ್ತುತ ನಿಲ್ದಾಣ",
+          file_name: "custom_cs_kn.mp3",
+          file_size: 1024,
+          file_format: "mp3",
+          url: "http://storage/custom_cs_kn.mp3",
+          storage_path: "stage_audios/custom_cs_kn.mp3",
+          created_at: new Date().toISOString(),
+        },
+      ];
+
+      const records = await generateRouteStageAudioRecords({
+        languages: ["en", "kn"],
+        stageAudios: customDbStageAudios,
+        getFontFamily: () => "TestFont",
+      });
+
+      expect(records).toHaveLength(3);
+
+      // Verify stages structure & deterministic ordering
+      expect(records[0].stage).toBe("current");
+      expect(records[0].stageLabel).toBe("Current Stop");
+      expect(records[1].stage).toBe("next");
+      expect(records[1].stageLabel).toBe("Next Stop");
+      expect(records[2].stage).toBe("arriving");
+      expect(records[2].stageLabel).toBe("Arriving Stop");
+
+      // Verify Current Stop records
+      const currentStage = records[0];
+      expect(currentStage.languages).toHaveLength(2);
+
+      // 1. English (falls back to static presets for URL and natural STAGE_PRESET)
+      expect(currentStage.languages[0].language).toBe("en");
+      expect(currentStage.languages[0].text).toBe("Current stop is");
+      expect(currentStage.languages[0].audioFileUrl).toContain("current_stop_en.mp3");
+      expect(currentStage.languages[0].audioFileName).toBe("current_stop_en.mp3");
+      expect(currentStage.languages[0].bitmap).toBe("11001100");
+
+      // 2. Kannada (uses DB override for custom announcement_text and URL)
+      expect(currentStage.languages[1].language).toBe("kn");
+      expect(currentStage.languages[1].text).toBe("ಕಸ್ಟಮ್ ಪ್ರಸ್ತುತ ನಿಲ್ದಾಣ");
+      expect(currentStage.languages[1].audioFileUrl).toBe("http://storage/custom_cs_kn.mp3");
+      expect(currentStage.languages[1].audioFileName).toBe("custom_cs_kn.mp3");
+      expect(currentStage.languages[1].bitmap).toBe("11001100");
+
+      // Verify Next Stop records (no DB override, uses STAGE_PRESETS and static URLs)
+      const nextStage = records[1];
+      expect(nextStage.languages[0].language).toBe("en");
+      expect(nextStage.languages[0].text).toBe("Next stop is");
+      expect(nextStage.languages[0].audioFileName).toBe("next_stop_en.mp3");
+
+      expect(nextStage.languages[1].language).toBe("kn");
+      expect(nextStage.languages[1].text).toBe("ಮುಂದಿನ ನಿಲ್ದಾಣ");
+      expect(nextStage.languages[1].audioFileName).toBe("ns_kn.mp3");
+
+      // Verify Arriving Stop records
+      const arrivingStage = records[2];
+      expect(arrivingStage.languages[0].language).toBe("en");
+      expect(arrivingStage.languages[0].text).toBe("Arriving at");
+      expect(arrivingStage.languages[0].audioFileName).toBe("arriving_stop_en.mp3");
+
+      expect(arrivingStage.languages[1].language).toBe("kn");
+      expect(arrivingStage.languages[1].text).toBe("ತಲುಪುತ್ತಿರುವ ನಿಲ್ದಾಣ");
+      expect(arrivingStage.languages[1].audioFileName).toBe("as_kn.mp3");
+    });
+
+    it("defaults to English when empty languages array is passed", async () => {
+      vi.spyOn(bitmapModule, "fetchBitmapMatrix").mockResolvedValue("0011");
+
+      const records = await generateRouteStageAudioRecords({
+        languages: [],
+      });
+
+      expect(records).toHaveLength(3);
+      expect(records[0].languages).toHaveLength(1);
+      expect(records[0].languages[0].language).toBe("en");
     });
   });
 });

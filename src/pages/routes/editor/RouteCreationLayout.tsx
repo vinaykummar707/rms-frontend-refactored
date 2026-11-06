@@ -102,8 +102,9 @@ import {
   computeSyncAnnouncementText,
   getTransliteratedAnnouncementText,
   generateRouteStopRecords,
+  generateRouteStageAudioRecords,
 } from "@/features/routes/utils/routeAnnouncementTransliteration";
-import type { IRouteStopRecord } from "@/shared/types/routeConfigV2";
+import type { IRouteStopRecord, IRouteStageAudioRecord } from "@/shared/types/routeConfigV2";
 import type { IStageAudio, StageType } from "@/shared/types/stageAudio";
 import { checkActiveDuplicate } from "@/shared/hooks/useCrud";
 import { notify } from "@/core/notifications/notificationService";
@@ -251,6 +252,18 @@ const ROUTE_SYNC_FIELDS: string[] = [
   "via",
   "separation",
 ];
+
+let hasStageAudiosColumnCache: boolean | null = null;
+async function checkHasStageAudiosColumn(): Promise<boolean> {
+  if (hasStageAudiosColumnCache !== null) return hasStageAudiosColumnCache;
+  try {
+    const { error } = await supabase.from("routes").select("stage_audios").limit(1);
+    hasStageAudiosColumnCache = !error;
+  } catch {
+    hasStageAudiosColumnCache = false;
+  }
+  return hasStageAudiosColumnCache;
+}
 
 // Split-route number zones are half height, so icons render too small there and are not offered
 const isSplitRouteNumberZone = (key: string) => key === "routeNumber1" || key === "routeNumber2";
@@ -1745,12 +1758,29 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
             depotStops,
             getFontFamily: getFontFileByLanguage,
           });
+          setValue("stops" as any, stopsPayload);
         } catch (stopGenError) {
           console.warn("Could not generate stops records on submit:", stopGenError);
           stopsPayload = (getValues("stops" as any) || []) as IRouteStopRecord[];
         }
 
-        const payload = {
+        // Generate structured V2 stage audios records with desired languages & bitmaps
+        let stageAudiosPayload: IRouteStageAudioRecord[] = [];
+        try {
+          stageAudiosPayload = await generateRouteStageAudioRecords({
+            languages: desiredLanguages,
+            stageAudios,
+            getFontFamily: getFontFileByLanguage,
+          });
+          setValue("stage_audios" as any, stageAudiosPayload);
+        } catch (stageGenError) {
+          console.warn("Could not generate stage audios records on submit:", stageGenError);
+          stageAudiosPayload = (getValues("stage_audios" as any) || []) as IRouteStageAudioRecord[];
+        }
+
+        const hasStageAudiosCol = await checkHasStageAudiosColumn();
+
+        const payload: Record<string, any> = {
           ...cleanedData,
           route_number: trimmedRouteNum,
           route_number_1: data.is_split_route ? trimmedRouteNum1 : "",
@@ -1758,6 +1788,10 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           separation: separator,
           stops: stopsPayload,
         };
+
+        if (hasStageAudiosCol) {
+          payload.stage_audios = stageAudiosPayload;
+        }
 
         if (mode === "edit") {
           updateRoute(
@@ -1960,7 +1994,28 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs font-medium px-2.5"
-                      onClick={() => setIsJsonOpen(true)}
+                      onClick={async () => {
+                        try {
+                          const [genStops, genStages] = await Promise.all([
+                            generateRouteStopRecords({
+                              stops: simulationRouteStops,
+                              languages: desiredLanguages,
+                              depotStops,
+                              getFontFamily: getFontFileByLanguage,
+                            }),
+                            generateRouteStageAudioRecords({
+                              languages: desiredLanguages,
+                              stageAudios,
+                              getFontFamily: getFontFileByLanguage,
+                            }),
+                          ]);
+                          setValue("stops" as any, genStops);
+                          setValue("stage_audios" as any, genStages);
+                        } catch (err) {
+                          console.warn("Could not regenerate stops/stage audios for JSON preview:", err);
+                        }
+                        setIsJsonOpen(true);
+                      }}
                     >
                       JSON
                     </Button>
@@ -1971,6 +2026,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       data={{
                         ...sanitizeRouteBoards(getValues() as any),
                         stops: getValues("stops" as any) || [],
+                        stage_audios: getValues("stage_audios" as any) || [],
                       }}
                     />
                   </div>

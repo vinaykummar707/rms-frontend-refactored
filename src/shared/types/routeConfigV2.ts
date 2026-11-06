@@ -136,6 +136,20 @@ export interface IRouteStopRecord {
   languages: IRouteStopLanguageRecord[];
 }
 
+export interface IRouteStageAudioLanguageRecord {
+  language: string;
+  text: string;
+  audioFileUrl: string | null;
+  audioFileName: string | null;
+  bitmap: string;
+}
+
+export interface IRouteStageAudioRecord {
+  stage: "current" | "next" | "arriving";
+  stageLabel: string;
+  languages: IRouteStageAudioLanguageRecord[];
+}
+
 export interface DisplayConfigPostRequest {
   route_number: string;
   source: string;
@@ -150,6 +164,7 @@ export interface DisplayConfigPostRequest {
   rear: Simulation[];
   internal: Simulation[];
   stops?: Simulation[] | IRouteStopRecord[];
+  stage_audios?: IRouteStageAudioRecord[];
   version: string;
   depot_id: string;
   organization_id: string;

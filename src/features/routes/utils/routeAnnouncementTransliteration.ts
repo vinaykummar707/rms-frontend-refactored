@@ -1,7 +1,14 @@
 import { fetchTransliteration } from "@/shared/utils/transliteration";
 import { getStagePreset } from "@/features/stageAudios/services/stageAudioPresets";
 import { fetchBitmapMatrix } from "@/features/bitmap/services/bitmapService";
-import type { IRouteStopRecord, IRouteStopLanguageRecord } from "@/shared/types/routeConfigV2";
+import { AVAILABLE_LANGUAGES } from "@/config/constants/languages";
+import type {
+  IRouteStopRecord,
+  IRouteStopLanguageRecord,
+  IRouteStageAudioRecord,
+  IRouteStageAudioLanguageRecord,
+} from "@/shared/types/routeConfigV2";
+import type { IStageAudio, StageType } from "@/shared/types/stageAudio";
 
 export interface RouteSimStopOption {
   id: string;
@@ -242,6 +249,127 @@ export async function generateRouteStopRecords({
       latitude: Number.isFinite(latNum) ? latNum : null,
       longitude: Number.isFinite(lngNum) ? lngNum : null,
       languages: languageRecords,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Generates structured IRouteStageAudioRecord[] for all announcement stages ('current', 'next', 'arriving')
+ * across all chosen route languages.
+ * Resolves localized text, audio URLs (DB stage_audios or static fallback presets), and 16-height LED bitmaps.
+ */
+export async function generateRouteStageAudioRecords({
+  languages,
+  stageAudios = [],
+  getFontFamily,
+}: {
+  languages: string[];
+  stageAudios?: IStageAudio[];
+  getFontFamily?: (lang: string, key: string, height?: number) => string;
+}): Promise<IRouteStageAudioRecord[]> {
+  const STAGES: Array<{ id: "current" | "next" | "arriving"; dbType: StageType; label: string }> = [
+    { id: "current", dbType: "current_stop", label: "Current Stop" },
+    { id: "next", dbType: "next_stop", label: "Next Stop" },
+    { id: "arriving", dbType: "arriving_stop", label: "Arriving Stop" },
+  ];
+
+  const targetLanguages = Array.from(new Set(languages.filter(Boolean)));
+  if (targetLanguages.length === 0) {
+    targetLanguages.push("en");
+  }
+
+  const results: IRouteStageAudioRecord[] = [];
+
+  for (const stg of STAGES) {
+    const langRecords: IRouteStageAudioLanguageRecord[] = [];
+
+    for (const lang of targetLanguages) {
+      const baseLang = getBaseLanguageCode(lang);
+
+      // 1. Resolve Audio URL & File Name
+      const dbMatch = stageAudios.find((a) => {
+        if (a.stage_type !== stg.dbType) return false;
+        const aLang = (a.language || "").toLowerCase();
+        const baseLower = baseLang.toLowerCase();
+        const langLower = lang.toLowerCase();
+        return (
+          aLang === langLower ||
+          aLang === baseLower ||
+          aLang.startsWith(baseLower + "-") ||
+          baseLower.startsWith(aLang)
+        );
+      });
+
+      const staticPreset = AVAILABLE_LANGUAGES.find(
+        (l) => l.code.toLowerCase() === baseLang
+      );
+
+      let audioFileUrl: string | null = null;
+      let audioFileName: string | null = null;
+
+      if (dbMatch?.url) {
+        audioFileUrl = dbMatch.url;
+        audioFileName = dbMatch.file_name || null;
+      } else if (staticPreset) {
+        if (stg.id === "current") {
+          audioFileUrl = staticPreset.current || null;
+          audioFileName = staticPreset.currentFileName || null;
+        } else if (stg.id === "next") {
+          audioFileUrl = staticPreset.next || null;
+          audioFileName = staticPreset.nextFileName || null;
+        } else {
+          audioFileUrl = staticPreset.coming || null;
+          audioFileName = staticPreset.comingFileName || null;
+        }
+      }
+
+      // 2. Resolve Localized Phrase Text
+      let text = dbMatch?.announcement_text?.trim() || "";
+      if (!text) {
+        text = getStagePreset(lang, stg.dbType);
+      }
+
+      // 3. Generate LED Bitmap (height: 16)
+      let bitmapStr = "";
+      if (text) {
+        try {
+          const fontFamily = getFontFamily ? getFontFamily(lang, "text", 16) : undefined;
+          const bitmapKey = `${baseLang}:${fontFamily || "default"}:${text}`;
+
+          if (bitmapCache.has(bitmapKey)) {
+            bitmapStr = bitmapCache.get(bitmapKey) || "";
+          } else {
+            bitmapStr = await fetchBitmapMatrix({
+              text,
+              height: 16,
+              weight: "Bold",
+              family: fontFamily,
+            });
+            if (bitmapStr) {
+              bitmapCache.set(bitmapKey, bitmapStr);
+            }
+          }
+        } catch (bitmapError) {
+          console.warn(`Stage bitmap generation skipped for "${text}" (${lang}):`, bitmapError);
+          bitmapStr = "";
+        }
+      }
+
+      langRecords.push({
+        language: lang,
+        text,
+        audioFileUrl,
+        audioFileName,
+        bitmap: bitmapStr || "",
+      });
+    }
+
+    results.push({
+      stage: stg.id,
+      stageLabel: stg.label,
+      languages: langRecords,
     });
   }
 

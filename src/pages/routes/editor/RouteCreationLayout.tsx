@@ -20,6 +20,7 @@ import {
   Volume2,
   Mic,
   MessageSquare,
+  Check,
   X,
   AlignLeft,
   AlignCenter,
@@ -99,7 +100,9 @@ import { stageAudioCrud } from "@/features/stageAudios/api/stageAudioCrud";
 import {
   computeSyncAnnouncementText,
   getTransliteratedAnnouncementText,
+  generateRouteStopRecords,
 } from "@/features/routes/utils/routeAnnouncementTransliteration";
+import type { IRouteStopRecord } from "@/shared/types/routeConfigV2";
 import type { IStageAudio, StageType } from "@/shared/types/stageAudio";
 import { checkActiveDuplicate } from "@/shared/hooks/useCrud";
 import { notify } from "@/core/notifications/notificationService";
@@ -367,9 +370,51 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const [simStopId, setSimStopId] = useState<string>("");
     const [simStage, setSimStage] = useState<"current" | "next" | "arriving">("current");
     const [simLanguage, setSimLanguage] = useState<string>("en");
+    const [desiredLanguages, setDesiredLanguages] = useState<string[]>(["en", "kn"]);
+    const [simAnnouncementSlide, setSimAnnouncementSlide] = useState<Simulation | null>(null);
     const [simAnnouncementText, setSimAnnouncementText] = useState<string>("");
     const [playbackPhase, setPlaybackPhase] = useState<"idle" | "playing_stage" | "playing_stop">("idle");
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+    // Language management helpers
+    const toggleDesiredLanguage = useCallback((code: string) => {
+      setDesiredLanguages((prev) => {
+        if (prev.includes(code)) {
+          if (prev.length <= 1) {
+            notify.warning("At least one language must remain selected");
+            return prev;
+          }
+          return prev.filter((c) => c !== code);
+        } else {
+          return [...prev, code];
+        }
+      });
+    }, []);
+
+    const removeDesiredLanguage = useCallback((code: string) => {
+      setDesiredLanguages((prev) => {
+        if (prev.length <= 1) {
+          notify.warning("At least one language must remain selected");
+          return prev;
+        }
+        return prev.filter((c) => c !== code);
+      });
+    }, []);
+
+    // Keep active simulator language aligned with selected desired languages
+    useEffect(() => {
+      if (desiredLanguages.length > 0 && !desiredLanguages.includes(simLanguage)) {
+        setSimLanguage(desiredLanguages[0]);
+      }
+    }, [desiredLanguages, simLanguage]);
+
+    const filteredSimLanguageItems = useMemo(() => {
+      const avail = new Set(desiredLanguages.map((d) => d.toLowerCase()));
+      return AVAILABLE_LANGUAGES.filter((l) => avail.has(l.code.toLowerCase())).map((l) => ({
+        value: l.code,
+        label: l.label,
+      }));
+    }, [desiredLanguages]);
 
     // Watch Form Values
     const isSplitRoute = watch("is_split_route");
@@ -459,7 +504,13 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     }, [watch, getValues, setValue]);
 
     // Active board simulations with safe index boundary
-    const simulations: Simulation[] = watch(selectedTab as any) || [];
+    const activeBoardVal = watch(selectedTab as any);
+    const simulations: Simulation[] = useMemo(() => {
+      if (selectedTab === Tab.STOPS) {
+        return simAnnouncementSlide ? [simAnnouncementSlide] : [];
+      }
+      return Array.isArray(activeBoardVal) ? activeBoardVal : [];
+    }, [selectedTab, simAnnouncementSlide, activeBoardVal]);
     const safeSimulationIndex =
       simulations.length > 0
         ? Math.min(Math.max(0, selectedSimulationIndex), simulations.length - 1)
@@ -703,6 +754,30 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         }
       }
     }, [depotStops]);
+
+    // Restore desiredLanguages from existing stops in route if present
+    const hasInitializedStopsLang = useRef(false);
+    useEffect(() => {
+      if (!hasInitializedStopsLang.current) {
+        const rawStops = getValues("stops" as any);
+        if (Array.isArray(rawStops) && rawStops.length > 0) {
+          const extractedLangs = new Set<string>();
+          rawStops.forEach((st: any) => {
+            if (Array.isArray(st?.languages)) {
+              st.languages.forEach((l: any) => {
+                if (l?.language) extractedLangs.add(l.language);
+              });
+            } else if (st?.language) {
+              extractedLangs.add(st.language);
+            }
+          });
+          if (extractedLangs.size > 0) {
+            setDesiredLanguages(Array.from(extractedLangs));
+            hasInitializedStopsLang.current = true;
+          }
+        }
+      }
+    }, [getValues]);
 
     // Mutual Exclusion Filtering
     const sourceVal = (source || "").trim();
@@ -1220,11 +1295,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           stopTypeAudioFileUrl: stageAudio,
         };
 
-        setValue(Tab.STOPS as any, [singleSlide], { shouldDirty: true });
+        setSimAnnouncementSlide(singleSlide);
         setSelectedSimulationIndex(0);
         setIsPaused(false);
       },
-      [currentSimulation?.width, setValue, setSelectedSimulationIndex]
+      [currentSimulation?.width, setSelectedSimulationIndex]
     );
 
     const prevSimTriggerRef = useRef<string>("");
@@ -1283,6 +1358,30 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       syncStopAnnouncementSimulation,
       playChainedAudio,
     ]);
+
+    // Background generator: Syncs clean IRouteStopRecord[] for all stops with desired languages & bitmaps
+    useEffect(() => {
+      let isCancelled = false;
+      if (simulationRouteStops.length > 0 && desiredLanguages.length > 0) {
+        generateRouteStopRecords({
+          stops: simulationRouteStops,
+          languages: desiredLanguages,
+          depotStops,
+          getFontFamily: getFontFileByLanguage,
+        })
+          .then((generatedStops) => {
+            if (!isCancelled && generatedStops.length > 0) {
+              setValue("stops" as any, generatedStops, { shouldDirty: false });
+            }
+          })
+          .catch((err) => {
+            console.warn("Could not generate stops records:", err);
+          });
+      }
+      return () => {
+        isCancelled = true;
+      };
+    }, [simulationRouteStops, desiredLanguages, depotStops, getFontFileByLanguage, setValue]);
 
     const handleToggleSplitRoute = (checked: boolean) => {
       setValue("is_split_route", checked, { shouldDirty: true });
@@ -1635,12 +1734,27 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           );
         }
 
+        // Generate structured V2 stops records with desired languages & bitmaps
+        let stopsPayload: IRouteStopRecord[] = [];
+        try {
+          stopsPayload = await generateRouteStopRecords({
+            stops: simulationRouteStops,
+            languages: desiredLanguages,
+            depotStops,
+            getFontFamily: getFontFileByLanguage,
+          });
+        } catch (stopGenError) {
+          console.warn("Could not generate stops records on submit:", stopGenError);
+          stopsPayload = (getValues("stops" as any) || []) as IRouteStopRecord[];
+        }
+
         const payload = {
           ...cleanedData,
           route_number: trimmedRouteNum,
           route_number_1: data.is_split_route ? trimmedRouteNum1 : "",
           route_number_2: data.is_split_route ? trimmedRouteNum2 : "",
           separation: separator,
+          stops: stopsPayload,
         };
 
         if (mode === "edit") {
@@ -1852,7 +1966,10 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       open={isJsonOpen}
                       onOpenChange={setIsJsonOpen}
                       title="Route Configuration JSON"
-                      data={sanitizeRouteBoards(getValues() as any)}
+                      data={{
+                        ...sanitizeRouteBoards(getValues() as any),
+                        stops: getValues("stops" as any) || [],
+                      }}
                     />
                   </div>
                 </ActionTooltip>
@@ -3183,7 +3300,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           /* ------------------------------------------------------- */
           /* STOP ANNOUNCEMENT SIMULATOR PANEL (Tab.STOPS)           */
           /* ------------------------------------------------------- */
-          <div className="flex flex-col flex-none w-[420px] lg:w-[460px] xl:w-[500px] border-r border-border bg-card overflow-hidden">
+          <div className="flex flex-col flex-none w-[420px] lg:w-[420px] xl:w-[420px] border-r border-border bg-card overflow-hidden">
             {/* Simulator Header */}
             <div className="flex h-11 flex-none items-center justify-between border-b border-border px-4 bg-card">
               <div className="flex items-center gap-2">
@@ -3209,7 +3326,74 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
             {/* Simulator Body (Compact, no-scroll arrangement) */}
             <div className="flex-1 p-3.5 space-y-3 overflow-y-auto">
-              {/* Row 1: Route Stop & Announcement Language */}
+              {/* Row 0: Desired Route Announcement Languages */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-foreground">
+                    Route Languages ({desiredLanguages.length})
+                  </label>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      type="button"
+                      className="h-6 text-[11px] font-semibold px-2 inline-flex items-center gap-1 rounded-md border border-input bg-background hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <Plus className="h-3 w-3" /> Add Language
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 max-h-64 overflow-y-auto">
+                      <DropdownMenuLabel className="text-xs font-bold">Select Desired Languages</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {AVAILABLE_LANGUAGES.map((lang) => {
+                        const isChecked = desiredLanguages.includes(lang.code);
+                        return (
+                          <DropdownMenuItem
+                            key={lang.code}
+                            className="flex items-center justify-between text-xs cursor-pointer py-1.5"
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              toggleDesiredLanguage(lang.code);
+                            }}
+                          >
+                            <span className="font-medium">{lang.label}</span>
+                            {isChecked ? (
+                              <Check className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground uppercase font-mono">{lang.code}</span>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {/* Active Language Badges */}
+                <div className="flex flex-wrap gap-1.5 p-1.5 rounded-lg bg-muted/40 border border-border min-h-[32px] items-center">
+                  {desiredLanguages.map((code) => {
+                    const langObj = AVAILABLE_LANGUAGES.find((l) => l.code === code);
+                    const label = langObj?.label || code.toUpperCase();
+                    return (
+                      <span
+                        key={code}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-background text-foreground border border-border shadow-xs"
+                      >
+                        <span>{label}</span>
+                        {desiredLanguages.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removeDesiredLanguage(code)}
+                            className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted cursor-pointer"
+                            title={`Remove ${label}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Row 1: Route Stop & Filtered Announcement Language */}
               <div className="grid grid-cols-12 gap-2.5 items-end">
                 {/* 1. Stop Selector */}
                 <div className="col-span-7 space-y-1">
@@ -3272,7 +3456,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                   )}
                 </div>
 
-                {/* 2. Language Selector */}
+                {/* 2. Language Selector (Filtered) */}
                 <div className="col-span-5 space-y-1">
                   <label className="text-xs font-semibold text-foreground">
                     Language
@@ -3282,13 +3466,13 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     onValueChange={(val) => {
                       if (val) setSimLanguage(val);
                     }}
-                    items={languageItems}
+                    items={filteredSimLanguageItems}
                   >
                     <SelectTrigger className="w-full h-8 px-2.5 text-xs bg-background">
                       <SelectValue placeholder="Language" />
                     </SelectTrigger>
                     <SelectContent className="max-h-56">
-                      {languageItems.map((l) => (
+                      {filteredSimLanguageItems.map((l) => (
                         <SelectItem key={l.value} value={l.value} className="text-xs">
                           {l.label}
                         </SelectItem>

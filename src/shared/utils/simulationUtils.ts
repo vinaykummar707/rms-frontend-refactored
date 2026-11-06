@@ -70,11 +70,11 @@ export const sanitizeSimulation = (
 };
 
 /**
- * Sanitizes all signboard slide arrays (front, side, rear, internal, stops) within route data.
+ * Sanitizes all signboard slide arrays (front, side, rear, internal) within route data.
  */
 export const sanitizeRouteBoards = <T extends Record<string, any>>(data: T): T => {
   if (!data) return data;
-  const boards = ["front", "side", "rear", "internal", "stops"] as const;
+  const boards = ["front", "side", "rear", "internal"] as const;
   const cleaned: Record<string, any> = { ...data };
   const isSplit = Boolean(cleaned.is_split_route);
 

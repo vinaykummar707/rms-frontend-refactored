@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   computeSyncAnnouncementText,
   getTransliteratedAnnouncementText,
+  generateRouteStopRecords,
   transliterateStopText,
   transliterationCache,
   type RouteSimStopOption,
 } from "../utils/routeAnnouncementTransliteration";
 import * as transliterationModule from "@/shared/utils/transliteration";
+import * as bitmapModule from "@/features/bitmap/services/bitmapService";
 
 describe("Route Announcement Transliteration", () => {
   const sampleStopWithKn: RouteSimStopOption = {
@@ -137,6 +139,81 @@ describe("Route Announcement Transliteration", () => {
       );
 
       expect(announcement).toBe("आने वाला स्टॉप है Gachibowli");
+    });
+  });
+
+  describe("generateRouteStopRecords", () => {
+    it("generates structured stop records with only the required fields", async () => {
+      vi.spyOn(transliterationModule, "fetchTransliteration").mockResolvedValue(["गच्चीबौली"]);
+      vi.spyOn(bitmapModule, "fetchBitmapMatrix").mockResolvedValue("00110011");
+
+      const depotStops = [
+        {
+          id: "depot-s1",
+          name: "Majestic BS",
+          name_kn: "ಮೆಜೆಸ್ಟಿಕ್",
+          stop_audios: [{ url: "http://storage/majestic.mp3", file_name: "majestic.mp3" }],
+          up_latitude: "12.9767",
+          up_longitude: "77.5713",
+        },
+      ];
+
+      const records = await generateRouteStopRecords({
+        stops: [
+          {
+            id: "depot-s1",
+            name: "Majestic BS",
+            label: "Majestic BS",
+            group: "via",
+          },
+        ],
+        languages: ["en", "kn", "hi"],
+        depotStops,
+        getFontFamily: () => "Arial",
+      });
+
+      expect(records).toHaveLength(1);
+      const stopRecord = records[0];
+
+      // Must have strictly the requested fields
+      expect(stopRecord.stopId).toBe("depot-s1");
+      expect(stopRecord.stopName).toBe("Majestic BS");
+      expect(stopRecord.audioFileUrl).toBe("http://storage/majestic.mp3");
+      expect(stopRecord.audioFileName).toBe("majestic.mp3");
+      expect(stopRecord.latitude).toBe(12.9767);
+      expect(stopRecord.longitude).toBe(77.5713);
+
+      // Must NOT contain unneeded simulation fields
+      expect((stopRecord as any).format).toBeUndefined();
+      expect((stopRecord as any).texts).toBeUndefined();
+      expect((stopRecord as any).width).toBeUndefined();
+      expect((stopRecord as any).height).toBeUndefined();
+      expect((stopRecord as any).scrollType).toBeUndefined();
+      expect((stopRecord as any).stopType).toBeUndefined();
+
+      // Languages array validation
+      expect(stopRecord.languages).toHaveLength(3);
+
+      // 1. English
+      expect(stopRecord.languages[0]).toEqual({
+        language: "en",
+        translitaratedtext: "Majestic BS",
+        bitmap: "00110011",
+      });
+
+      // 2. Kannada (uses catalog name_kn directly)
+      expect(stopRecord.languages[1]).toEqual({
+        language: "kn",
+        translitaratedtext: "ಮೆಜೆಸ್ಟಿಕ್",
+        bitmap: "00110011",
+      });
+
+      // 3. Hindi (transliterated via API)
+      expect(stopRecord.languages[2]).toEqual({
+        language: "hi",
+        translitaratedtext: "गच्चीबौली",
+        bitmap: "00110011",
+      });
     });
   });
 });

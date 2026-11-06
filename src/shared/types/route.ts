@@ -8,11 +8,11 @@ export interface IRoute {
   route_number_1: string;
   route_number_2: string;
   is_split_route: boolean;
-  front: string;
-  side: string;
-  rear: string;
-  internal: string;
-  stops: string;
+  front: string | any[];
+  side: string | any[];
+  rear: string | any[];
+  internal: string | any[];
+  stops: string | any[];
   created_at: string;
   updated_at?: string;
   organization_id?: string | null;

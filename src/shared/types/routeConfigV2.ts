@@ -120,6 +120,22 @@ export interface StopRouteConfig extends Simulation {
   down_longitude: number;
 }
 
+export interface IRouteStopLanguageRecord {
+  language: string;
+  translitaratedtext: string;
+  bitmap: string;
+}
+
+export interface IRouteStopRecord {
+  stopId: string;
+  stopName: string;
+  audioFileUrl: string | null;
+  audioFileName: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  languages: IRouteStopLanguageRecord[];
+}
+
 export interface DisplayConfigPostRequest {
   route_number: string;
   source: string;
@@ -133,7 +149,7 @@ export interface DisplayConfigPostRequest {
   side: Simulation[];
   rear: Simulation[];
   internal: Simulation[];
-  stops?: Simulation[];
+  stops?: Simulation[] | IRouteStopRecord[];
   version: string;
   depot_id: string;
   organization_id: string;

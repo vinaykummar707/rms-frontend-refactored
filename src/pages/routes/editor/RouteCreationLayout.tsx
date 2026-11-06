@@ -20,7 +20,6 @@ import {
   Volume2,
   Mic,
   MessageSquare,
-  Check,
   X,
   AlignLeft,
   AlignCenter,
@@ -77,6 +76,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { DisplayEditor } from "@/features/simulation/components/DisplayEditor";
 import { IMEInput } from "@/components/common/IMEInput";
@@ -377,20 +378,6 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
     // Language management helpers
-    const toggleDesiredLanguage = useCallback((code: string) => {
-      setDesiredLanguages((prev) => {
-        if (prev.includes(code)) {
-          if (prev.length <= 1) {
-            notify.warning("At least one language must remain selected");
-            return prev;
-          }
-          return prev.filter((c) => c !== code);
-        } else {
-          return [...prev, code];
-        }
-      });
-    }, []);
-
     const removeDesiredLanguage = useCallback((code: string) => {
       setDesiredLanguages((prev) => {
         if (prev.length <= 1) {
@@ -400,6 +387,21 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         return prev.filter((c) => c !== code);
       });
     }, []);
+
+    const addDesiredLanguage = useCallback((code: string) => {
+      setDesiredLanguages((prev) => {
+        if (prev.includes(code)) return prev;
+        return [...prev, code];
+      });
+    }, []);
+
+    const availableLanguageSelectItems = useMemo(() => {
+      const current = new Set(desiredLanguages);
+      return AVAILABLE_LANGUAGES.filter((l) => !current.has(l.code)).map((l) => ({
+        value: l.code,
+        label: l.label,
+      }));
+    }, [desiredLanguages]);
 
     // Keep active simulator language aligned with selected desired languages
     useEffect(() => {
@@ -3332,62 +3334,52 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                   <label className="text-xs font-semibold text-foreground">
                     Route Languages ({desiredLanguages.length})
                   </label>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      type="button"
-                      className="h-6 text-[11px] font-semibold px-2 inline-flex items-center gap-1 rounded-md border border-input bg-background hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                    >
-                      <Plus className="h-3 w-3" /> Add Language
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56 max-h-64 overflow-y-auto">
-                      <DropdownMenuLabel className="text-xs font-bold">Select Desired Languages</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {AVAILABLE_LANGUAGES.map((lang) => {
-                        const isChecked = desiredLanguages.includes(lang.code);
-                        return (
-                          <DropdownMenuItem
-                            key={lang.code}
-                            className="flex items-center justify-between text-xs cursor-pointer py-1.5"
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              toggleDesiredLanguage(lang.code);
-                            }}
-                          >
-                            <span className="font-medium">{lang.label}</span>
-                            {isChecked ? (
-                              <Check className="h-3.5 w-3.5 text-primary" />
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground uppercase font-mono">{lang.code}</span>
-                            )}
-                          </DropdownMenuItem>
-                        );
-                      })}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <Select
+                    value={null}
+                    onValueChange={(val) => {
+                      if (val) addDesiredLanguage(val);
+                    }}
+                    items={availableLanguageSelectItems}
+                    disabled={availableLanguageSelectItems.length === 0}
+                  >
+                    <SelectTrigger size="sm" className="w-36 text-xs">
+                      <SelectValue
+                        placeholder={
+                          availableLanguageSelectItems.length === 0
+                            ? "All Added"
+                            : "+ Add Language"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent align="end" className="max-h-56">
+                      {availableLanguageSelectItems.map((lang) => (
+                        <SelectItem key={lang.value} value={lang.value} className="text-xs">
+                          {lang.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                {/* Active Language Badges */}
-                <div className="flex flex-wrap gap-1.5 p-1.5 rounded-lg bg-muted/40 border border-border min-h-[32px] items-center">
+                {/* Active Language Chips */}
+                <div className="flex flex-wrap gap-1.5 items-center">
                   {desiredLanguages.map((code) => {
                     const langObj = AVAILABLE_LANGUAGES.find((l) => l.code === code);
                     const label = langObj?.label || code.toUpperCase();
                     return (
-                      <span
-                        key={code}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-background text-foreground border border-border shadow-xs"
-                      >
+                      <Badge key={code} variant="secondary">
                         <span>{label}</span>
                         {desiredLanguages.length > 1 && (
                           <button
                             type="button"
                             onClick={() => removeDesiredLanguage(code)}
-                            className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted cursor-pointer"
+                            className="cursor-pointer opacity-70 hover:opacity-100 inline-flex items-center ml-0.5"
                             title={`Remove ${label}`}
                           >
                             <X className="h-3 w-3" />
                           </button>
                         )}
-                      </span>
+                      </Badge>
                     );
                   })}
                 </div>
@@ -3482,41 +3474,30 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                 </div>
               </div>
 
-              {/* Row 2: Announcement Stage Segmented Control */}
+              {/* Row 2: Announcement Stage Tabs */}
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-foreground">
                   Announcement Stage
                 </label>
-                <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-muted/60 border border-border">
-                  {[
-                    { id: "current", label: "Current Stop" },
-                    { id: "next", label: "Next Stop" },
-                    { id: "arriving", label: "Arriving Stop" },
-                  ].map((stg) => {
-                    const isSelected = simStage === stg.id;
-                    return (
-                      <button
-                        key={stg.id}
-                        type="button"
-                        onClick={() => setSimStage(stg.id as any)}
-                        className={cn(
-                          "h-7 text-xs font-medium rounded-md transition-all cursor-pointer flex items-center justify-center gap-1.5 select-none",
-                          isSelected
-                            ? "bg-background text-foreground font-semibold shadow-xs border border-border"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "h-1.5 w-1.5 rounded-full shrink-0 transition-colors",
-                            isSelected ? "bg-primary" : "bg-muted-foreground/30"
-                          )}
-                        />
-                        <span className="truncate">{stg.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <Tabs
+                  value={simStage}
+                  onValueChange={(val) => {
+                    if (val) setSimStage(val as "current" | "next" | "arriving");
+                  }}
+                  className="w-full"
+                >
+                  <TabsList className="w-full grid grid-cols-3">
+                    <TabsTrigger value="current" className="text-xs">
+                      Current Stop
+                    </TabsTrigger>
+                    <TabsTrigger value="next" className="text-xs">
+                      Next Stop
+                    </TabsTrigger>
+                    <TabsTrigger value="arriving" className="text-xs">
+                      Arriving Stop
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
 
               {/* Row 3: Live Output Preview & Audio Controls */}

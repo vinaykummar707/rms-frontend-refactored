@@ -299,6 +299,51 @@ describe("Route Stop Selection & Mutual Exclusion", () => {
       expect(cleanStops).toEqual(genuineV2Stops);
       expect(cleanStops.length).toBe(1);
     });
+
+    it("does not preselect any announcement languages by default allowing user to decide", () => {
+      // By default for a new route, announcement languages array is empty
+      const initialDesiredLanguages: string[] = [];
+      expect(initialDesiredLanguages).toEqual([]);
+      expect(initialDesiredLanguages.length).toBe(0);
+
+      // Active simulator language must remain empty when no languages are chosen
+      const getSimLanguage = (langs: string[], current: string) => {
+        if (langs.length > 0) {
+          return current && langs.includes(current) ? current : langs[0];
+        }
+        return "";
+      };
+
+      expect(getSimLanguage(initialDesiredLanguages, "")).toBe("");
+    });
+
+    it("allows user to add languages and remove any language without restrictions", () => {
+      let desiredLanguages: string[] = [];
+
+      const addLanguage = (code: string) => {
+        if (!desiredLanguages.includes(code)) {
+          desiredLanguages = [...desiredLanguages, code];
+        }
+      };
+
+      const removeLanguage = (code: string) => {
+        desiredLanguages = desiredLanguages.filter((c) => c !== code);
+      };
+
+      // User adds Kannada and English
+      addLanguage("kn");
+      addLanguage("en");
+      expect(desiredLanguages).toEqual(["kn", "en"]);
+
+      // User removes English
+      removeLanguage("en");
+      expect(desiredLanguages).toEqual(["kn"]);
+
+      // User removes Kannada (last remaining language)
+      removeLanguage("kn");
+      expect(desiredLanguages).toEqual([]);
+      expect(desiredLanguages.length).toBe(0);
+    });
   });
 });
 

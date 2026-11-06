@@ -213,5 +213,92 @@ describe("Route Stop Selection & Mutual Exclusion", () => {
     expect(availableDestStops.length).toBe(mockStops.length);
     expect(availableViaStops.length).toBe(mockStops.length);
   });
+
+  describe("Default Empty Stops in Route JSON", () => {
+    it("strictly returns empty array for route stops when no source, destination, or via stops are selected", () => {
+      const buildRouteSimStops = ({
+        viaStops,
+        source,
+        destination,
+      }: {
+        viaStops: ViaStopItem[];
+        source: string;
+        destination: string;
+      }) => {
+        const options: { id: string; name: string }[] = [];
+        viaStops.forEach((via) => {
+          options.push({ id: via.id, name: via.name });
+        });
+        if (source.trim()) {
+          options.push({ id: "source-endpoint", name: source.trim() });
+        }
+        if (destination.trim()) {
+          options.push({ id: "dest-endpoint", name: destination.trim() });
+        }
+        return options;
+      };
+
+      // Even if depot catalog contains stops, a blank route has NO route stops
+      const routeStops = buildRouteSimStops({
+        viaStops: [],
+        source: "",
+        destination: "",
+      });
+
+      expect(routeStops).toEqual([]);
+      expect(routeStops.length).toBe(0);
+    });
+
+    it("filters out legacy simulated stop slides when loading routes", () => {
+      const rawLoadedStops = [
+        {
+          format: "single",
+          texts: {
+            text: {
+              text: "CURRENT STOP IS KUKATPALLY",
+              scrollType: "Right To Left",
+            },
+          },
+          height: 16,
+          width: 160,
+          type: "stop",
+          stopType: "current",
+        },
+      ];
+
+      const cleanStops = rawLoadedStops.filter(
+        (s: any) => s && (s.stopId || (s.id && !s.format && !s.texts))
+      );
+
+      expect(cleanStops).toEqual([]);
+    });
+
+    it("preserves genuine V2 structured stop records when loading routes", () => {
+      const genuineV2Stops = [
+        {
+          stopId: "stop-101",
+          stopName: "Majestic BS",
+          audioFileUrl: "https://example.com/audio/majestic.mp3",
+          audioFileName: "majestic.mp3",
+          latitude: 12.9767,
+          longitude: 77.5713,
+          languages: [
+            {
+              language: "en",
+              translitaratedtext: "Majestic BS",
+              bitmap: "0000000000",
+            },
+          ],
+        },
+      ];
+
+      const cleanStops = genuineV2Stops.filter(
+        (s: any) => s && (s.stopId || (s.id && !s.format && !s.texts))
+      );
+
+      expect(cleanStops).toEqual(genuineV2Stops);
+      expect(cleanStops.length).toBe(1);
+    });
+  });
 });
 

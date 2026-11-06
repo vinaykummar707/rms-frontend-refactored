@@ -67,13 +67,19 @@ export const CreateRoutePage: React.FC = () => {
               }
             };
 
+            const rawStops = parseConfig(data.stops);
+            // Sanitize stops: if stops contains legacy simulation slides (format / type === "stop" without stopId), reset to []
+            const cleanStops = rawStops.filter(
+              (s: any) => s && (s.stopId || (s.id && !s.format && !s.texts))
+            );
+
             methods.reset({
               ...data,
               front: parseConfig(data.front),
               rear: parseConfig(data.rear),
               side: parseConfig(data.side),
               internal: parseConfig(data.internal),
-              stops: parseConfig(data.stops),
+              stops: cleanStops,
             });
             setMode("edit");
           }

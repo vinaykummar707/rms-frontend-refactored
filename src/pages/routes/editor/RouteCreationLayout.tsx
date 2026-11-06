@@ -603,6 +603,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
     // Ensure active zone has text configuration initialized
     useEffect(() => {
+      if (selectedTab === Tab.STOPS) return;
       if (!currentSimulation || safeSimulationIndex < 0 || !activeTextZoneKey) return;
       const texts = currentSimulation.texts || {};
       const currentZoneConfig = (texts as any)[activeTextZoneKey];
@@ -1115,19 +1116,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     }, [viaStops, sourceVal, sourceNorm, destVal, destNorm, depotStops]);
 
     const effectiveSimStops = useMemo<RouteSimStopOption[]>(() => {
-      if (simulationRouteStops.length > 0) return simulationRouteStops;
-      return depotStops.map((s) => {
-        const audioRec = Array.isArray(s.stop_audios) ? s.stop_audios[0] : s.stop_audios;
-        return {
-          id: s.id,
-          name: s.name,
-          name_kn: s.name_kn,
-          group: "endpoint" as const,
-          label: s.name,
-          stopAudioUrl: audioRec?.url || null,
-        };
-      });
-    }, [simulationRouteStops, depotStops]);
+      return simulationRouteStops;
+    }, [simulationRouteStops]);
 
     const simStopSelectItems = useMemo(
       () =>
@@ -1139,14 +1129,21 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     );
 
     useEffect(() => {
-      if (selectedTab === Tab.STOPS && effectiveSimStops.length > 0) {
-        if (!simStopId || !effectiveSimStops.some((s) => s.id === simStopId)) {
-          setSimStopId(effectiveSimStops[0].id);
+      if (selectedTab === Tab.STOPS) {
+        if (effectiveSimStops.length > 0) {
+          if (!simStopId || !effectiveSimStops.some((s) => s.id === simStopId)) {
+            setSimStopId(effectiveSimStops[0].id);
+          }
+        } else {
+          setSimStopId("");
+          setSimAnnouncementSlide(null);
+          setSimAnnouncementText("");
         }
       }
     }, [selectedTab, effectiveSimStops, simStopId]);
 
     const selectedSimStop = useMemo(() => {
+      if (effectiveSimStops.length === 0) return null;
       return effectiveSimStops.find((s) => s.id === simStopId) || effectiveSimStops[0] || null;
     }, [effectiveSimStops, simStopId]);
 
@@ -1392,6 +1389,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           .catch((err) => {
             console.warn("Could not generate stops records:", err);
           });
+      } else {
+        setValue("stops" as any, [], { shouldDirty: false });
       }
       return () => {
         isCancelled = true;
@@ -1416,7 +1415,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleFormatChange = (newFormat: "single" | "two" | "three") => {
-      if (!currentSimulation || currentFormat === newFormat) return;
+      if (selectedTab === Tab.STOPS || !currentSimulation || currentFormat === newFormat) return;
       setOptimisticFormat(newFormat);
 
       const w = currentSimulation.width;
@@ -1510,6 +1509,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleHeightChange = (newHeight: 16 | 32) => {
+      if (selectedTab === Tab.STOPS) return;
       const sims: Simulation[] = getValues(selectedTab as any) || [];
       if (sims.length === 0) return;
       const updated = sims.map((s) => fitSimulationToHeight(s, newHeight));
@@ -1517,6 +1517,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleWidthChange = (newWidth: (typeof WIDTH_OPTIONS)[number]) => {
+      if (selectedTab === Tab.STOPS) return;
       const sims: Simulation[] = getValues(selectedTab as any) || [];
       if (sims.length === 0) return;
       const updated = sims.map((s) => ({ ...s, width: newWidth }));
@@ -1525,6 +1526,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
     // Slide Operations
     const handleAddSlide = (format: "single" | "two" | "three", type: SimulationType = "route") => {
+      if (selectedTab === Tab.STOPS) return;
       let newSim: Simulation;
       const routeNum = isSplitRoute
         ? `${getValues("route_number_1") || ""}/${getValues("route_number_2") || ""}`
@@ -1578,6 +1580,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleDuplicateSlide = (indexToDup?: number) => {
+      if (selectedTab === Tab.STOPS) return;
       const idx = typeof indexToDup === "number" ? indexToDup : selectedSimulationIndex;
       const list = getValues(selectedTab as any) || [];
       const target = list[idx];
@@ -1591,6 +1594,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleMoveSlide = (idx: number, direction: "up" | "down") => {
+      if (selectedTab === Tab.STOPS) return;
       const list = [...(getValues(selectedTab as any) || [])];
       const targetIdx = direction === "up" ? idx - 1 : idx + 1;
       if (targetIdx < 0 || targetIdx >= list.length) return;
@@ -1600,6 +1604,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleRemoveSlide = (idx: number) => {
+      if (selectedTab === Tab.STOPS) return;
       const list = [...(getValues(selectedTab as any) || [])];
       list.splice(idx, 1);
       setValue(selectedTab as any, list, { shouldDirty: true });
@@ -1607,6 +1612,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleClearAllSlides = () => {
+      if (selectedTab === Tab.STOPS) return;
       if (
         window.confirm(`Are you sure you want to delete all slides on ${getBoardLabel(selectedTab)} display?`)
       ) {
@@ -1616,6 +1622,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleCopyAllToBoard = (destBoard: string) => {
+      if (selectedTab === Tab.STOPS) return;
       const currentSims = getValues(selectedTab as any) || [];
       if (currentSims.length === 0 || !destBoard || destBoard === selectedTab) return;
       const cloned = JSON.parse(JSON.stringify(currentSims));
@@ -1624,6 +1631,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleCopySlideToBoard = (destBoard: string) => {
+      if (selectedTab === Tab.STOPS) return;
       if (!currentSimulation || destBoard === selectedTab) return;
       const destSims: Simulation[] = getValues(destBoard as any) || [];
       let cloned: Simulation = JSON.parse(JSON.stringify(currentSimulation));
@@ -1751,17 +1759,25 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
 
         // Generate structured V2 stops records with desired languages & bitmaps
         let stopsPayload: IRouteStopRecord[] = [];
-        try {
-          stopsPayload = await generateRouteStopRecords({
-            stops: simulationRouteStops,
-            languages: desiredLanguages,
-            depotStops,
-            getFontFamily: getFontFileByLanguage,
-          });
-          setValue("stops" as any, stopsPayload);
-        } catch (stopGenError) {
-          console.warn("Could not generate stops records on submit:", stopGenError);
-          stopsPayload = (getValues("stops" as any) || []) as IRouteStopRecord[];
+        if (simulationRouteStops.length > 0 && desiredLanguages.length > 0) {
+          try {
+            stopsPayload = await generateRouteStopRecords({
+              stops: simulationRouteStops,
+              languages: desiredLanguages,
+              depotStops,
+              getFontFamily: getFontFileByLanguage,
+            });
+            setValue("stops" as any, stopsPayload);
+          } catch (stopGenError) {
+            console.warn("Could not generate stops records on submit:", stopGenError);
+            const currentFormStops = getValues("stops" as any) || [];
+            stopsPayload = Array.isArray(currentFormStops)
+              ? currentFormStops.filter((s: any) => s && s.stopId)
+              : [];
+          }
+        } else {
+          stopsPayload = [];
+          setValue("stops" as any, []);
         }
 
         // Generate structured V2 stage audios records with desired languages & bitmaps
@@ -1996,13 +2012,17 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       className="h-8 text-xs font-medium px-2.5"
                       onClick={async () => {
                         try {
+                          const genStopsPromise =
+                            simulationRouteStops.length > 0 && desiredLanguages.length > 0
+                              ? generateRouteStopRecords({
+                                  stops: simulationRouteStops,
+                                  languages: desiredLanguages,
+                                  depotStops,
+                                  getFontFamily: getFontFileByLanguage,
+                                })
+                              : Promise.resolve([]);
                           const [genStops, genStages] = await Promise.all([
-                            generateRouteStopRecords({
-                              stops: simulationRouteStops,
-                              languages: desiredLanguages,
-                              depotStops,
-                              getFontFamily: getFontFileByLanguage,
-                            }),
+                            genStopsPromise,
                             generateRouteStageAudioRecords({
                               languages: desiredLanguages,
                               stageAudios,
@@ -2025,7 +2045,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       title="Route Configuration JSON"
                       data={{
                         ...sanitizeRouteBoards(getValues() as any),
-                        stops: getValues("stops" as any) || [],
+                        stops: simulationRouteStops.length === 0 ? [] : (getValues("stops" as any) || []),
                         stage_audios: getValues("stage_audios" as any) || [],
                       }}
                     />
@@ -3620,7 +3640,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                     size="sm"
                     className="flex-1 h-8 text-xs font-semibold cursor-pointer"
                     onClick={() => playChainedAudio(stageAudioUrl, stopAudioUrl)}
-                    disabled={!stageAudioUrl && !stopAudioUrl}
+                    disabled={!selectedSimStop || (!stageAudioUrl && !stopAudioUrl)}
                   >
                     <Play className="h-3.5 w-3.5 mr-1.5" /> Replay Announcement
                   </Button>

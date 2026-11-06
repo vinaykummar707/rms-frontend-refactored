@@ -26,6 +26,11 @@ import {
 import { RouteTable } from "@/pages/routes/components/RouteTable";
 import { MixedVersionExportDialog } from "@/pages/routes/components/MixedVersionExportDialog";
 import {
+  WifiTransferStatusBadge,
+  WifiTransferDialog,
+  useWifiTransferStore,
+} from "@/features/wifiTransfer";
+import {
   Navigation,
   Plus,
   RefreshCw,
@@ -344,8 +349,10 @@ export function RegularRoutesPage() {
       await exportRoutes(selectedRouteObjects, format, {
         fileNamePrefix: "regular_routes",
       });
+      await useWifiTransferStore.getState().loadPendingPackage();
+      useWifiTransferStore.getState().openDialog();
       notify.success(
-        `Exported ${selectedRouteObjects.length} route(s) in ${format.toUpperCase()} format (.zip)`
+        `Package prepared for Signboard Wi-Fi Transfer (${selectedRouteObjects.length} route(s))`
       );
     } catch (error: any) {
       notify.error(error?.message || `Export failed for ${format.toUpperCase()} format`);
@@ -431,6 +438,8 @@ export function RegularRoutesPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <WifiTransferStatusBadge />
+
           <Button
             variant="outline"
             size="sm"
@@ -745,6 +754,9 @@ export function RegularRoutesPage() {
         open={isMixedVersionDialogOpen}
         onOpenChange={setIsMixedVersionDialogOpen}
       />
+
+      {/* Signboard Wi-Fi Transfer Dialog */}
+      <WifiTransferDialog />
     </div>
   );
 }

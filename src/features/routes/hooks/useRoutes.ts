@@ -5,6 +5,7 @@ import {
   duplicateRoute,
   exportRoutes,
 } from "../services/routeService";
+import { useWifiTransferStore } from "@/features/wifiTransfer/stores/useWifiTransferStore";
 import { sortByLatestCreated } from "@/shared/utils/dateUtils";
 import { notify } from "@/core/notifications/notificationService";
 import type { IRoute } from "@/shared/types/route";
@@ -57,7 +58,11 @@ export function useRoutes(depotId?: string, organizationId?: string) {
     try {
       notify.info(`Requesting ${format.toUpperCase()} export package...`);
       await exportRoutes(routesToExport, format, { organizationId, depotId });
-      notify.success(`Exported ${routesToExport.length} route(s) in ${format.toUpperCase()} format (.zip)`);
+      await useWifiTransferStore.getState().loadPendingPackage();
+      useWifiTransferStore.getState().openDialog();
+      notify.success(
+        `Package prepared for Signboard Wi-Fi Transfer (${routesToExport.length} route(s))`
+      );
     } catch (err: any) {
       notify.error(err.message || "Export failed");
       throw err;

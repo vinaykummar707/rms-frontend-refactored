@@ -6,6 +6,7 @@ import {
   getExportErrorMessage,
   writeZipToDirectoryOrFallback,
 } from "@/shared/utils/fileSystemExport";
+import { savePendingExport } from "@/features/wifiTransfer/services/wifiExportStorage";
 import { env } from "@/config/env";
 import axios from "axios";
 import type { IRoute, IRouteCreate } from "@/shared/types/route";
@@ -214,13 +215,20 @@ export function parseRouteSignboardField(val: any): any {
 }
 
 /**
- * Exports routes to the controller API in batches of 10 and triggers zip download.
+ * Exports routes to the controller API in batches of 10, caches to IndexedDB for Wi-Fi transfer,
+ * and optionally triggers a direct zip download.
  */
 export async function exportRoutes(
   routes: IRoute[],
   format: "v1" | "v2",
-  scope?: { organizationId?: string; depotId?: string; fileNamePrefix?: string }
-): Promise<void> {
+  scope?: {
+    organizationId?: string;
+    depotId?: string;
+    fileNamePrefix?: string;
+    downloadToComputer?: boolean;
+    saveToIndexedDb?: boolean;
+  }
+): Promise<{ blob: Blob; filename: string }> {
   if (!routes.length) {
     throw new Error("No routes provided for export");
   }
@@ -240,21 +248,22 @@ export async function exportRoutes(
   const apiBase = env.VITE_CONTROLLER_API_URL;
   const areaId = scope?.organizationId || routes[0]?.organization_id || "";
   const depotId = scope?.depotId || routes[0]?.depot_id || "";
+  const filename = `${filePrefix}_export_${format}_${currentDate}.zip`;
+
+  let blob: Blob;
 
   if (format === "v1") {
     const v1RoutesPayload = rawRoutes.map((route) => convertV2ToV1(route));
     const exportUrl = `${apiBase}/routes/export?areaId=${areaId}&depotId=${depotId}`;
 
     try {
-      const blob = await exportRoutesInBatches(v1RoutesPayload, async (batch) => {
+      blob = await exportRoutesInBatches(v1RoutesPayload, async (batch) => {
         const response = await axios.post(exportUrl, batch, {
           headers: { "Content-Type": "application/json" },
           responseType: "blob",
         });
         return new Blob([response.data], { type: "application/zip" });
       });
-
-      await writeZipToDirectoryOrFallback(blob, `${filePrefix}_export_v1_${currentDate}.zip`);
     } catch (error: any) {
       const msg = await getExportErrorMessage(error);
       throw new Error(`V1 export failed: ${msg}`);
@@ -263,19 +272,42 @@ export async function exportRoutes(
     const exportUrl = `${apiBase}/routes/export-v2?areaId=${areaId}&depotId=${depotId}`;
 
     try {
-      const blob = await exportRoutesInBatches(rawRoutes, async (batch) => {
+      blob = await exportRoutesInBatches(rawRoutes, async (batch) => {
         const response = await axios.post(exportUrl, batch, {
           headers: { "Content-Type": "application/json" },
           responseType: "blob",
         });
         return new Blob([response.data], { type: "application/zip" });
       });
-
-      await writeZipToDirectoryOrFallback(blob, `${filePrefix}_export_v2_${currentDate}.zip`);
     } catch (error: any) {
       const msg = await getExportErrorMessage(error);
       throw new Error(`V2 export failed: ${msg}`);
     }
   }
+
+  // 1. Cache to IndexedDB for offline Wi-Fi transfer (replaces any previous pending package)
+  if (scope?.saveToIndexedDb !== false) {
+    try {
+      await savePendingExport({
+        blob,
+        filename,
+        format,
+        routeCount: routes.length,
+        sizeBytes: blob.size,
+        createdAt: new Date().toISOString(),
+        organizationId: areaId,
+        depotId,
+      });
+    } catch (storageError) {
+      console.warn("Could not cache export package in IndexedDB:", storageError);
+    }
+  }
+
+  // 2. Direct computer download if explicitly requested
+  if (scope?.downloadToComputer === true) {
+    await writeZipToDirectoryOrFallback(blob, filename);
+  }
+
+  return { blob, filename };
 }
 

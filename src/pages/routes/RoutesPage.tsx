@@ -40,6 +40,11 @@ import {
 import { RouteTable } from "./components/RouteTable";
 import { MixedVersionExportDialog } from "./components/MixedVersionExportDialog";
 import {
+  WifiTransferStatusBadge,
+  WifiTransferDialog,
+  useWifiTransferStore,
+} from "@/features/wifiTransfer";
+import {
   Route as RouteIcon,
   Plus,
   RefreshCw,
@@ -535,8 +540,10 @@ export function RoutesPage() {
         organizationId: activeOrgId,
         depotId: selectedDepot?.id,
       });
+      await useWifiTransferStore.getState().loadPendingPackage();
+      useWifiTransferStore.getState().openDialog();
       notify.success(
-        `Exported ${selectedRouteObjects.length} route(s) in ${format.toUpperCase()} format (.zip)`
+        `Package prepared for Signboard Wi-Fi Transfer (${selectedRouteObjects.length} route(s))`
       );
     } catch (error: any) {
       notify.error(error?.message || `Export failed for ${format.toUpperCase()} format`);
@@ -588,6 +595,98 @@ export function RoutesPage() {
       </div>
 
       {/* Action Toolbar */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-end gap-3">
+        
+
+        {/* Right Side: Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Signboard Wi-Fi Transfer Badge */}
+          <WifiTransferStatusBadge />
+
+          {/* Refresh Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="h-9 gap-1.5 text-xs"
+          >
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
+            />
+            <span>Refresh</span>
+          </Button>
+
+          {/* Add Route Buttons (Roles Restricted) */}
+          {canManage && !isGuest && (
+            <>
+              {routeAccess.hasV1Routes && (
+                <Button
+                  variant={routeAccess.hasV2Routes ? "outline" : "default"}
+                  size="sm"
+                  onClick={handleAddV1Route}
+                  disabled={!selectedDepot}
+                  className="h-9 gap-1.5 text-xs font-semibold shadow-xs"
+                  title={!selectedDepot ? "Select a depot first" : undefined}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>
+                    {routeAccess.isV1Only ? "Add Route" : "V1 Add Route"}
+                  </span>
+                </Button>
+              )}
+
+              {routeAccess.hasV2Routes && (
+                <Button
+                  size="sm"
+                  onClick={handleAddV2Route}
+                  disabled={!selectedDepot}
+                  className="h-9 gap-1.5 text-xs font-semibold shadow-xs"
+                  title={!selectedDepot ? "Select a depot first" : undefined}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>
+                    {routeAccess.isV2Only ? "Add Route" : "V2 Add Route"}
+                  </span>
+                </Button>
+              )}
+            </>
+          )}
+
+          {/* Bulk Action Buttons (When rows are selected) */}
+          {selectedRouteIds.length > 0 && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportSelectedRoutes}
+                disabled={isExporting}
+                className="h-9 gap-1.5 text-xs font-medium"
+              >
+                {isExporting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5 text-primary" />
+                )}
+                <span>Export ({selectedRouteIds.length})</span>
+              </Button>
+
+              {canManage && !isGuest && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setIsBulkDeleteOpen(true)}
+                  className="h-9 gap-1.5 text-xs font-semibold"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete All ({selectedRouteIds.length})</span>
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+        {/* Action Toolbar */}
       <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         {/* Left Side: Search & Filter Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 max-w-3xl flex-wrap">
@@ -684,90 +783,7 @@ export function RoutesPage() {
           )}
         </div>
 
-        {/* Right Side: Action Buttons */}
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {/* Refresh Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="h-9 gap-1.5 text-xs"
-          >
-            <RefreshCw
-              className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
-            />
-            <span>Refresh</span>
-          </Button>
-
-          {/* Add Route Buttons (Roles Restricted) */}
-          {canManage && !isGuest && (
-            <>
-              {routeAccess.hasV1Routes && (
-                <Button
-                  variant={routeAccess.hasV2Routes ? "outline" : "default"}
-                  size="sm"
-                  onClick={handleAddV1Route}
-                  disabled={!selectedDepot}
-                  className="h-9 gap-1.5 text-xs font-semibold shadow-xs"
-                  title={!selectedDepot ? "Select a depot first" : undefined}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>
-                    {routeAccess.isV1Only ? "Add Route" : "V1 Add Route"}
-                  </span>
-                </Button>
-              )}
-
-              {routeAccess.hasV2Routes && (
-                <Button
-                  size="sm"
-                  onClick={handleAddV2Route}
-                  disabled={!selectedDepot}
-                  className="h-9 gap-1.5 text-xs font-semibold shadow-xs"
-                  title={!selectedDepot ? "Select a depot first" : undefined}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>
-                    {routeAccess.isV2Only ? "Add Route" : "V2 Add Route"}
-                  </span>
-                </Button>
-              )}
-            </>
-          )}
-
-          {/* Bulk Action Buttons (When rows are selected) */}
-          {selectedRouteIds.length > 0 && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportSelectedRoutes}
-                disabled={isExporting}
-                className="h-9 gap-1.5 text-xs font-medium"
-              >
-                {isExporting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5 text-primary" />
-                )}
-                <span>Export ({selectedRouteIds.length})</span>
-              </Button>
-
-              {canManage && !isGuest && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setIsBulkDeleteOpen(true)}
-                  className="h-9 gap-1.5 text-xs font-semibold"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Delete All ({selectedRouteIds.length})</span>
-                </Button>
-              )}
-            </>
-          )}
-        </div>
+       
       </div>
 
       {/* Meta Bar: Record Count & Version Pills */}
@@ -1054,6 +1070,9 @@ export function RoutesPage() {
         open={isMixedVersionDialogOpen}
         onOpenChange={setIsMixedVersionDialogOpen}
       />
+
+      {/* Signboard Wi-Fi Transfer Dialog */}
+      <WifiTransferDialog />
     </div>
   );
 }

@@ -306,6 +306,21 @@ describe("Route Announcement Transliteration", () => {
       expect(records[0].languages).toHaveLength(1);
       expect(records[0].languages[0].language).toBe("en");
     });
+
+    it("passes custom fontHeight (e.g. 32) to fetchBitmapMatrix", async () => {
+      const bitmapSpy = vi.spyOn(bitmapModule, "fetchBitmapMatrix").mockResolvedValue("11110000");
+
+      await generateRouteStageAudioRecords({
+        languages: ["en"],
+        fontHeight: 32,
+      });
+
+      expect(bitmapSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          height: 32,
+        })
+      );
+    });
   });
 });
 

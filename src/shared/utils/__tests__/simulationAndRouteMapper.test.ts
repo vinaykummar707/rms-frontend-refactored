@@ -63,6 +63,9 @@ describe("Simulation Utilities & Route Config Mapper", () => {
     const sideText = getRoutePresetZoneText("two", "sideText", values);
     expect(sideText).toBe("500-D");
 
+    const singleText = getRoutePresetZoneText("single", "text", values);
+    expect(singleText).toBe("500-D - HEBBAL ↔ SILK BOARD - MARATHAHALLI");
+
     const upperText = getRoutePresetZoneText("three", "upperHalfText", values);
     expect(upperText).toBe("HEBBAL ↔ SILK BOARD");
 

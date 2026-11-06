@@ -123,11 +123,25 @@ export const getRoutePresetZoneText = (
 ): string | undefined => {
   switch (zoneKey) {
     case "text": {
+      if (format === "single") {
+        const routeNum =
+          values.routeNumber1 || values.routeNumber2
+            ? [values.routeNumber1, values.routeNumber2].filter(Boolean).join("/")
+            : values.routeNumber;
+        const singleRouteText = [
+          routeNum,
+          joinSourceDestination(values.source, values.destination, values.separation),
+          values.via,
+        ]
+          .filter(Boolean)
+          .join(" - ");
+        return singleRouteText || "Single Route Text";
+      }
       const routeText = joinRouteParts(
         joinSourceDestination(values.source, values.destination, values.separation),
         values.via
       );
-      return format === "single" ? routeText || "Single Route Text" : routeText;
+      return routeText;
     }
     case "upperHalfText":
       return joinSourceDestination(values.source, values.destination, values.separation);

@@ -158,11 +158,13 @@ export async function generateRouteStopRecords({
   languages,
   depotStops = [],
   getFontFamily,
+  fontHeight = 16,
 }: {
   stops: RouteSimStopOption[];
   languages: string[];
   depotStops?: any[];
   getFontFamily?: (lang: string, key: string, height?: number) => string;
+  fontHeight?: number;
 }): Promise<IRouteStopRecord[]> {
   const targetLanguages = Array.from(new Set(languages.filter(Boolean)));
   if (targetLanguages.length === 0) {
@@ -213,15 +215,15 @@ export async function generateRouteStopRecords({
       // Generate or retrieve cached LED bitmap
       let bitmapStr = "";
       try {
-        const fontFamily = getFontFamily ? getFontFamily(lang, "text", 16) : undefined;
-        const bitmapKey = `${baseLang}:${fontFamily || "default"}:${transliteratedText}`;
+        const fontFamily = getFontFamily ? getFontFamily(lang, "text", fontHeight) : undefined;
+        const bitmapKey = `${baseLang}:${fontHeight}:${fontFamily || "default"}:${transliteratedText}`;
 
         if (bitmapCache.has(bitmapKey)) {
           bitmapStr = bitmapCache.get(bitmapKey) || "";
         } else {
           bitmapStr = await fetchBitmapMatrix({
             text: transliteratedText,
-            height: 16,
+            height: fontHeight,
             weight: "Bold",
             family: fontFamily,
           });
@@ -264,10 +266,12 @@ export async function generateRouteStageAudioRecords({
   languages,
   stageAudios = [],
   getFontFamily,
+  fontHeight = 16,
 }: {
   languages: string[];
   stageAudios?: IStageAudio[];
   getFontFamily?: (lang: string, key: string, height?: number) => string;
+  fontHeight?: number;
 }): Promise<IRouteStageAudioRecord[]> {
   const STAGES: Array<{ id: "current" | "next" | "arriving"; dbType: StageType; label: string }> = [
     { id: "current", dbType: "current_stop", label: "Current Stop" },
@@ -331,19 +335,19 @@ export async function generateRouteStageAudioRecords({
         text = getStagePreset(lang, stg.dbType);
       }
 
-      // 3. Generate LED Bitmap (height: 16)
+      // 3. Generate LED Bitmap (height: fontHeight)
       let bitmapStr = "";
       if (text) {
         try {
-          const fontFamily = getFontFamily ? getFontFamily(lang, "text", 16) : undefined;
-          const bitmapKey = `${baseLang}:${fontFamily || "default"}:${text}`;
+          const fontFamily = getFontFamily ? getFontFamily(lang, "text", fontHeight) : undefined;
+          const bitmapKey = `${baseLang}:${fontHeight}:${fontFamily || "default"}:${text}`;
 
           if (bitmapCache.has(bitmapKey)) {
             bitmapStr = bitmapCache.get(bitmapKey) || "";
           } else {
             bitmapStr = await fetchBitmapMatrix({
               text,
-              height: 16,
+              height: fontHeight,
               weight: "Bold",
               family: fontFamily,
             });

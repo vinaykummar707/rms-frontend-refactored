@@ -47,9 +47,10 @@ const LEDMatrix: React.FC<LEDMatrixProps> = ({
       .map(() => Array(columns).fill(false));
   }, [rows, columns, pattern]);
 
-  // Reset user manual clicks when pattern or dimensions change
+  // Reset user manual clicks and scroll position when pattern or dimensions change
   useEffect(() => {
     setInteractiveMatrix(null);
+    currentScrollPositionRef.current = 0;
   }, [baseMatrix]);
 
   const matrix = interactiveMatrix || baseMatrix;

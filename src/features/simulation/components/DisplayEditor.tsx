@@ -14,6 +14,8 @@ interface DisplayEditorProps {
   listIndex: number;
   stopScroll?: boolean;
   ledColor?: string;
+  simulation?: Simulation | null;
+  onBitmapChange?: (bitmap: string) => void;
 }
 
 /**
@@ -21,7 +23,7 @@ interface DisplayEditorProps {
  */
 const LEDWrapper = React.memo(({
   fieldKey, rows, cols, textConfig, isRouteNumber = false,
-  fontFamily, stopScroll, basePath, setValue, ledColor
+  fontFamily, stopScroll, basePath, setValue, ledColor, onBitmapChange
 }: any) => {
   const fieldPath = `${basePath}.texts.${fieldKey}`;
   const currentBitmap = textConfig?.bitmap || "";
@@ -31,10 +33,14 @@ const LEDWrapper = React.memo(({
   const handleBitmapChange = useCallback((text: string) => {
     if (text !== currentBitmapRef.current) {
       currentBitmapRef.current = text;
-      setValue(`${fieldPath}.bitmap`, text, { shouldDirty: false });
-      setValue(`${fieldPath}.fontWidth`, getBitmapColumns(text), { shouldDirty: false });
+      if (onBitmapChange) {
+        onBitmapChange(text);
+      } else {
+        setValue(`${fieldPath}.bitmap`, text, { shouldDirty: false });
+        setValue(`${fieldPath}.fontWidth`, getBitmapColumns(text), { shouldDirty: false });
+      }
     }
-  }, [fieldPath, setValue]);
+  }, [fieldPath, setValue, onBitmapChange]);
 
   return (
     <LEDBitmapSimulator
@@ -53,7 +59,13 @@ const LEDWrapper = React.memo(({
 
 LEDWrapper.displayName = "LEDWrapper";
 
-export function DisplayEditor({ listIndex, stopScroll, ledColor }: DisplayEditorProps) {
+export function DisplayEditor({
+  listIndex,
+  stopScroll,
+  ledColor,
+  simulation,
+  onBitmapChange,
+}: DisplayEditorProps) {
   const { selectedTab } = useTabsStore();
   const { watch, setValue } = useFormContext<DisplayConfigPostRequest>();
   const getFontFileByLanguage = useFontFileByLanguage();
@@ -63,13 +75,15 @@ export function DisplayEditor({ listIndex, stopScroll, ledColor }: DisplayEditor
     setIsScrollStopped(stopScroll);
   }, [stopScroll]);
 
-  const simulationsForTab: Simulation[] = watch(selectedTab as any) || [];
+  const simulationsForTab: Simulation[] = simulation
+    ? [simulation]
+    : watch(selectedTab as any) || [];
   const safeListIndex = simulationsForTab.length > 0
     ? Math.min(Math.max(0, listIndex), simulationsForTab.length - 1)
     : 0;
 
   const basePath = `${selectedTab}.${safeListIndex}`;
-  const screenConfig: Simulation = simulationsForTab[safeListIndex];
+  const screenConfig: Simulation = simulation || simulationsForTab[safeListIndex];
 
   if (!screenConfig) return null;
 
@@ -83,6 +97,7 @@ export function DisplayEditor({ listIndex, stopScroll, ledColor }: DisplayEditor
     basePath,
     setValue,
     ledColor,
+    onBitmapChange,
   };
 
   const texts = (screenConfig.texts || {}) as any;
@@ -180,7 +195,11 @@ export function DisplayEditor({ listIndex, stopScroll, ledColor }: DisplayEditor
     <div className="flex flex-col items-start gap-4">
       {screenConfig.format === "single" ? (
         <LEDWrapper
-          key="single-text"
+          key={
+            simulation
+              ? `single-text-${(simulation as any).stopType || ""}-${screenConfig.height || 16}-${screenConfig.width || 160}`
+              : "single-text"
+          }
           {...commonProps}
           fieldKey="text"
           rows={screenConfig.height || 16}

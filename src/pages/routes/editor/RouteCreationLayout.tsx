@@ -142,7 +142,12 @@ import {
   useFontFileByLanguage,
   useFontHeightForLanguage,
 } from "@/shared/utils/getFontFileByLanguage";
-import { fillMissingSlideBitmaps } from "@/features/bitmap/services/bitmapService";
+import {
+  fillMissingSlideBitmaps,
+  fetchBitmapMatrix,
+  buildZoneBitmapParams,
+} from "@/features/bitmap/services/bitmapService";
+import { getBitmapColumns } from "@/shared/utils/measurements";
 import { cn } from "cn";
 
 const HEIGHT_OPTIONS = DEFAULT_SIMULATION_HEIGHTS;
@@ -386,6 +391,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const [simLanguage, setSimLanguage] = useState<string>("");
     const [desiredLanguages, setDesiredLanguages] = useState<string[]>([]);
     const [simAnnouncementSlide, setSimAnnouncementSlide] = useState<Simulation | null>(null);
+    const [stopsBoardHeight, setStopsBoardHeight] = useState<(typeof HEIGHT_OPTIONS)[number]>(16);
+    const [stopsBoardWidth, setStopsBoardWidth] = useState<(typeof WIDTH_OPTIONS)[number]>(160);
     const [simAnnouncementText, setSimAnnouncementText] = useState<string>("");
     const [playbackPhase, setPlaybackPhase] = useState<"idle" | "playing_stage" | "playing_stop">("idle");
     const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -417,9 +424,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           setSimLanguage(desiredLanguages[0]);
         }
       } else {
-        setSimLanguage("");
-        setSimAnnouncementSlide(null);
-        setSimAnnouncementText("");
+        if (simLanguage) {
+          setSimLanguage("");
+          setSimAnnouncementSlide(null);
+          setSimAnnouncementText("");
+        }
       }
     }, [desiredLanguages, simLanguage]);
 
@@ -675,8 +684,14 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       : "Fixed";
     const currentSpeed = pathBase ? Number(watch(`${pathBase}.scrollSpeed` as any)) || 4 : 4;
 
-    const activeWidth = currentSimulation?.width || 160;
-    const activeHeight = currentSimulation?.height || 16;
+    const activeWidth =
+      selectedTab === Tab.STOPS
+        ? stopsBoardWidth
+        : currentSimulation?.width || 160;
+    const activeHeight =
+      selectedTab === Tab.STOPS
+        ? stopsBoardHeight
+        : currentSimulation?.height || 16;
 
     const currentIcon = pathBase ? (watch(`${pathBase}.icon` as any) as string) || "" : "";
     const iconsAllowed = !isSplitRouteNumberZone(activeTextZoneKey);
@@ -1135,9 +1150,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
             setSimStopId(effectiveSimStops[0].id);
           }
         } else {
-          setSimStopId("");
-          setSimAnnouncementSlide(null);
-          setSimAnnouncementText("");
+          if (simStopId) {
+            setSimStopId("");
+            setSimAnnouncementSlide(null);
+            setSimAnnouncementText("");
+          }
         }
       }
     }, [selectedTab, effectiveSimStops, simStopId]);
@@ -1278,7 +1295,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         stage: "current" | "next" | "arriving",
         lang: string,
         stageAudio: string | null,
-        stopAudio: string | null
+        stopAudio: string | null,
+        bitmap: string = ""
       ) => {
         const singleSlide: Simulation = {
           format: "single",
@@ -1287,20 +1305,20 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               text,
               scrollType: "Right To Left",
               scrollSpeed: 4,
-              fontHeight: 16,
-              fontWidth: 12,
+              fontHeight: stopsBoardHeight,
+              fontWidth: bitmap ? getBitmapColumns(bitmap) : (stopsBoardHeight === 32 ? 24 : 12),
               fontWeight: "Bold",
               position: "Center",
               language: lang,
-              bitmap: "",
+              bitmap,
               icon: "",
               iconPosition: "start",
               iconSpacing: 2,
               iconWidthScale: 1.0,
             },
           },
-          height: 16,
-          width: currentSimulation?.width || 160,
+          height: stopsBoardHeight,
+          width: stopsBoardWidth,
           type: "stop",
           stopType: stage as any,
           audioFileUrl: stopAudio,
@@ -1311,16 +1329,35 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         setSelectedSimulationIndex(0);
         setIsPaused(false);
       },
-      [currentSimulation?.width, setSelectedSimulationIndex]
+      [setSelectedSimulationIndex, stopsBoardHeight, stopsBoardWidth]
     );
 
     const prevSimTriggerRef = useRef<string>("");
     useEffect(() => {
-      if (selectedTab !== Tab.STOPS || !selectedSimStop || !simLanguage) return;
+      if (selectedTab !== Tab.STOPS || !selectedSimStop || !simLanguage) {
+        prevSimTriggerRef.current = "";
+        return;
+      }
 
-      const triggerKey = `${selectedSimStop.id}_${simStage}_${simLanguage}`;
-      const hasChanged = prevSimTriggerRef.current !== triggerKey;
+      const triggerKey = `${selectedSimStop.id}_${simStage}_${simLanguage}_${stopsBoardHeight}_${stopsBoardWidth}`;
+      if (prevSimTriggerRef.current === triggerKey) {
+        return;
+      }
       prevSimTriggerRef.current = triggerKey;
+
+      const fetchBitmapForText = async (textToRender: string) => {
+        try {
+          const fontFamily = getFontFileByLanguage(simLanguage, "text", stopsBoardHeight);
+          const params = buildZoneBitmapParams(
+            { text: textToRender, fontHeight: stopsBoardHeight, fontWeight: "Bold", language: simLanguage },
+            { rows: stopsBoardHeight, fontFamily, isRouteNumber: false }
+          );
+          return await fetchBitmapMatrix(params);
+        } catch (e) {
+          console.warn("Could not fetch announcement slide bitmap:", e);
+          return "";
+        }
+      };
 
       // 1. Immediate sync computation so the preview and slide are never blank
       const initialText = computeSyncAnnouncementText(selectedSimStop, simStage, simLanguage);
@@ -1334,23 +1371,38 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         stopAudioUrl
       );
 
-      if (hasChanged) {
-        playChainedAudio(stageAudioUrl, stopAudioUrl);
-      }
+      let isCancelled = false;
+      fetchBitmapForText(initialText).then((initialBmp) => {
+        if (!isCancelled && initialBmp) {
+          syncStopAnnouncementSimulation(
+            initialText,
+            simStage,
+            simLanguage,
+            stageAudioUrl,
+            stopAudioUrl,
+            initialBmp
+          );
+        }
+      });
+
+      playChainedAudio(stageAudioUrl, stopAudioUrl);
 
       // 2. Asynchronously resolve transliterated text if needed
-      let isCancelled = false;
       getTransliteratedAnnouncementText(selectedSimStop, simStage, simLanguage)
-        .then((resolvedText) => {
+        .then(async (resolvedText) => {
           if (!isCancelled && resolvedText) {
             setSimAnnouncementText(resolvedText);
-            syncStopAnnouncementSimulation(
-              resolvedText,
-              simStage,
-              simLanguage,
-              stageAudioUrl,
-              stopAudioUrl
-            );
+            const resolvedBmp = await fetchBitmapForText(resolvedText);
+            if (!isCancelled) {
+              syncStopAnnouncementSimulation(
+                resolvedText,
+                simStage,
+                simLanguage,
+                stageAudioUrl,
+                stopAudioUrl,
+                resolvedBmp
+              );
+            }
           }
         })
         .catch((err) => {
@@ -1365,10 +1417,13 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       selectedSimStop,
       simStage,
       simLanguage,
+      stopsBoardHeight,
+      stopsBoardWidth,
       stageAudioUrl,
       stopAudioUrl,
       syncStopAnnouncementSimulation,
       playChainedAudio,
+      getFontFileByLanguage,
     ]);
 
     // Background generator: Syncs clean IRouteStopRecord[] for all stops with desired languages & bitmaps
@@ -1380,6 +1435,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
           languages: desiredLanguages,
           depotStops,
           getFontFamily: getFontFileByLanguage,
+          fontHeight: stopsBoardHeight,
         })
           .then((generatedStops) => {
             if (!isCancelled && generatedStops.length > 0) {
@@ -1390,12 +1446,15 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
             console.warn("Could not generate stops records:", err);
           });
       } else {
-        setValue("stops" as any, [], { shouldDirty: false });
+        const curStops = getValues("stops" as any);
+        if (Array.isArray(curStops) && curStops.length > 0) {
+          setValue("stops" as any, [], { shouldDirty: false });
+        }
       }
       return () => {
         isCancelled = true;
       };
-    }, [simulationRouteStops, desiredLanguages, depotStops, getFontFileByLanguage, setValue]);
+    }, [simulationRouteStops, desiredLanguages, depotStops, getFontFileByLanguage, stopsBoardHeight, setValue]);
 
     const handleToggleSplitRoute = (checked: boolean) => {
       setValue("is_split_route", checked, { shouldDirty: true });
@@ -1509,7 +1568,25 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleHeightChange = (newHeight: 16 | 32) => {
-      if (selectedTab === Tab.STOPS) return;
+      if (selectedTab === Tab.STOPS) {
+        setStopsBoardHeight(newHeight);
+        setSimAnnouncementSlide((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            height: newHeight,
+            texts: {
+              ...prev.texts,
+              text: {
+                ...(prev.texts as any)?.text,
+                fontHeight: newHeight,
+                bitmap: "",
+              },
+            },
+          };
+        });
+        return;
+      }
       const sims: Simulation[] = getValues(selectedTab as any) || [];
       if (sims.length === 0) return;
       const updated = sims.map((s) => fitSimulationToHeight(s, newHeight));
@@ -1517,7 +1594,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     };
 
     const handleWidthChange = (newWidth: (typeof WIDTH_OPTIONS)[number]) => {
-      if (selectedTab === Tab.STOPS) return;
+      if (selectedTab === Tab.STOPS) {
+        setStopsBoardWidth(newWidth);
+        setSimAnnouncementSlide((prev) => (prev ? { ...prev, width: newWidth } : null));
+        return;
+      }
       const sims: Simulation[] = getValues(selectedTab as any) || [];
       if (sims.length === 0) return;
       const updated = sims.map((s) => ({ ...s, width: newWidth }));
@@ -1537,6 +1618,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         getValues("separation")
       );
       const routeText = [sourceDestination, getValues("via")].filter(Boolean).join(" - ");
+      const singleRouteText = [routeNum, sourceDestination, getValues("via")].filter(Boolean).join(" - ");
 
       if (format === "single") {
         const singlePreset =
@@ -1544,7 +1626,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
             ? "PLEASE WEAR SEAT BELT - ಸುರಕ್ಷಿತ ಪ್ರಯಾಣ"
             : type === "special message"
             ? "THIS IS A SPECIAL MESSAGE SIMULATION"
-            : routeText || "Single Route Text";
+            : singleRouteText || "Single Route Text";
         newSim = getDefaultSingleSimulation(singlePreset, type);
       } else if (format === "two") {
         newSim = getDefaultTwoSimulation(
@@ -1766,6 +1848,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               languages: desiredLanguages,
               depotStops,
               getFontFamily: getFontFileByLanguage,
+              fontHeight: stopsBoardHeight,
             });
             setValue("stops" as any, stopsPayload);
           } catch (stopGenError) {
@@ -1788,6 +1871,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               languages: desiredLanguages,
               stageAudios,
               getFontFamily: getFontFileByLanguage,
+              fontHeight: stopsBoardHeight,
             });
             setValue("stage_audios" as any, stageAudiosPayload);
           } catch (stageGenError) {
@@ -2024,6 +2108,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                                   languages: desiredLanguages,
                                   depotStops,
                                   getFontFamily: getFontFileByLanguage,
+                                  fontHeight: stopsBoardHeight,
                                 })
                               : Promise.resolve([]);
                           const genStagesPromise =
@@ -2032,6 +2117,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                                   languages: desiredLanguages,
                                   stageAudios,
                                   getFontFamily: getFontFileByLanguage,
+                                  fontHeight: stopsBoardHeight,
                                 })
                               : Promise.resolve([]);
                           const [genStops, genStages] = await Promise.all([
@@ -2129,9 +2215,37 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         }}
                       >
                         <DisplayEditor
+                          key={
+                            selectedTab === Tab.STOPS
+                              ? `stops-${simStage}-${simLanguage}-${selectedSimStop?.id || ""}-${activeHeight}x${activeWidth}`
+                              : selectedTab
+                          }
                           listIndex={safeSimulationIndex}
                           stopScroll={isPaused}
                           ledColor={ledColor}
+                          simulation={selectedTab === Tab.STOPS ? (simAnnouncementSlide || undefined) : undefined}
+                          onBitmapChange={
+                            selectedTab === Tab.STOPS
+                              ? (bitmap) => {
+                                  setSimAnnouncementSlide((prev) => {
+                                    const currentText = (prev?.texts as any)?.text;
+                                    if (!prev || !currentText) return prev;
+                                    if (currentText.bitmap === bitmap) return prev;
+                                    return {
+                                      ...prev,
+                                      texts: {
+                                        ...prev.texts,
+                                        text: {
+                                          ...currentText,
+                                          bitmap,
+                                          fontWidth: getBitmapColumns(bitmap),
+                                        },
+                                      },
+                                    };
+                                  });
+                                }
+                              : undefined
+                          }
                         />
                       </div>
                     </div>
@@ -3478,7 +3592,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
               {/* Row 1: Route Stop & Filtered Announcement Language */}
               <div className="grid grid-cols-12 gap-2.5 items-end">
                 {/* 1. Stop Selector */}
-                <div className="col-span-7 space-y-1">
+                <div className="col-span-12 space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold text-foreground">
                       Route Stop
@@ -3539,7 +3653,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                 </div>
 
                 {/* 2. Language Selector (Filtered) */}
-                <div className="col-span-5 space-y-1">
+                <div className="col-span-12 space-y-1">
                   <label className="text-xs font-semibold text-foreground">
                     Language
                   </label>
@@ -3855,14 +3969,14 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         if (val.length > 0)
                           handleHeightChange(Number(val[0]) as (typeof HEIGHT_OPTIONS)[number]);
                       }}
-                      disabled={simulations.length === 0}
+                      disabled={selectedTab === Tab.STOPS ? false : simulations.length === 0}
                     >
                       {HEIGHT_OPTIONS.map((h) => (
                         <ActionTooltip key={h} content="Applies to all slides on this board" side="top">
                           <ToggleGroupItem
                             value={String(h)}
                             aria-label={`Height ${h}`}
-                            disabled={simulations.length === 0}
+                            disabled={selectedTab === Tab.STOPS ? false : simulations.length === 0}
                             className="flex-1 text-xs"
                           >
                             {h}
@@ -3885,14 +3999,14 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         if (val.length > 0)
                           handleWidthChange(Number(val[0]) as (typeof WIDTH_OPTIONS)[number]);
                       }}
-                      disabled={simulations.length === 0}
+                      disabled={selectedTab === Tab.STOPS ? false : simulations.length === 0}
                     >
                       {WIDTH_OPTIONS.map((w) => (
                         <ActionTooltip key={w} content="Applies to all slides on this board" side="top">
                           <ToggleGroupItem
                             value={String(w)}
                             aria-label={`Width ${w}`}
-                            disabled={simulations.length === 0}
+                            disabled={selectedTab === Tab.STOPS ? false : simulations.length === 0}
                             className="flex-1 text-xs px-1"
                           >
                             {w}
@@ -4074,12 +4188,25 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                               <span className="text-xs font-semibold text-foreground truncate">
                                 {singleText || "—"}
                               </span>
-                              <span className="text-[10px] text-muted-foreground font-mono mt-1 truncate">
-                                Font: {texts.text?.fontHeight || 14}px (
-                                {texts.text?.fontWeight || "Bold"}) • Scroll:{" "}
-                                {texts.text?.scrollType || "Right To Left"} • Speed: {texts.text?.scrollSpeed ?? 4} • Lang:{" "}
-                                {(texts.text?.language || "en").toUpperCase()}
-                              </span>
+                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-muted-foreground font-mono mt-1">
+                                <span>
+                                  Font: {texts.text?.fontHeight || 14}px (
+                                  {texts.text?.fontWeight || "Bold"}) • Scroll:{" "}
+                                  {texts.text?.scrollType || "Right To Left"} • Speed: {texts.text?.scrollSpeed ?? 4} • Lang:{" "}
+                                  {(texts.text?.language || "en").toUpperCase()}
+                                </span>
+                                {selectedTab === Tab.STOPS && (
+                                  texts.text?.bitmap ? (
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                      • Bitmap Ready ({getBitmapColumns(texts.text.bitmap)} cols)
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-600 dark:text-amber-400 font-medium">
+                                      • Generating Bitmap...
+                                    </span>
+                                  )
+                                )}
+                              </div>
                             </div>
 
                             {selectedTab === Tab.STOPS ? (

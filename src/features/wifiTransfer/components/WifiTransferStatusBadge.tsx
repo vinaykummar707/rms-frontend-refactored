@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
-import { Wifi, Radio } from "lucide-react";
+import { Wifi, Radio, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "cn";
 import { useWifiTransferStore } from "../stores/useWifiTransferStore";
 
 function formatBytes(bytes: number): string {
@@ -13,7 +14,8 @@ function formatBytes(bytes: number): string {
 export const WifiTransferStatusBadge: React.FC<{ className?: string }> = ({
   className,
 }) => {
-  const { pendingPackage, openDialog, loadPendingPackage } = useWifiTransferStore();
+  const { pendingPackage, openDialog, loadPendingPackage, isUploading, uploadProgress } =
+    useWifiTransferStore();
 
   useEffect(() => {
     loadPendingPackage();
@@ -23,21 +25,32 @@ export const WifiTransferStatusBadge: React.FC<{ className?: string }> = ({
 
   return (
     <Button
-      variant={hasPackage ? "default" : "outline"}
+      variant={isUploading ? "default" : hasPackage ? "default" : "outline"}
       size="sm"
       onClick={openDialog}
-      className={`h-8 text-xs font-semibold px-3 gap-2 inline-flex items-center rounded-md transition-colors cursor-pointer ${
-        hasPackage
+      className={cn(
+        "h-8 text-xs font-semibold px-3 gap-2 inline-flex items-center rounded-md transition-colors cursor-pointer",
+        isUploading
+          ? "bg-primary text-primary-foreground shadow-xs animate-pulse"
+          : hasPackage
           ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
-          : "text-muted-foreground hover:text-foreground"
-      } ${className || ""}`}
+          : "text-muted-foreground hover:text-foreground",
+        className
+      )}
       title={
-        hasPackage
-          ? `ZIP package (${formatBytes(pendingPackage?.sizeBytes || 0)}) stored locally. Click to upload to Signboard.`
+        isUploading
+          ? `Transfer in progress (${uploadProgress}%). Click to view details.`
+          : hasPackage
+          ? `Route package (${formatBytes(pendingPackage?.sizeBytes || 0)}) ready in local storage. Click to transfer to Signboard.`
           : "Open Signboard Wi-Fi Transfer panel"
       }
     >
-      {hasPackage ? (
+      {isUploading ? (
+        <>
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+          <span>Streaming ({uploadProgress}%)</span>
+        </>
+      ) : hasPackage ? (
         <>
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
@@ -55,4 +68,3 @@ export const WifiTransferStatusBadge: React.FC<{ className?: string }> = ({
     </Button>
   );
 };
-

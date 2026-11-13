@@ -13,6 +13,9 @@ export default defineConfig({
   },
   server: {
     port: 9092,
+    watch: {
+      ignored: ["**/mock_sd_card/**", "**/mock_sd_card"],
+    },
     proxy: {
       "/api/tts": {
         target: "http://localhost:5050",

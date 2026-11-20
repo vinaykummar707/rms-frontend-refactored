@@ -299,11 +299,20 @@ export function RegularRoutesPage() {
     );
   };
 
-  const handleSelectAllChange = (checked: boolean) => {
-    if (checked && filteredRoutes.length > 0) {
-      setSelectedRouteIds(filteredRoutes.map((r) => r.id));
+  const handleSelectAllChange = (checked: boolean, pageRouteIds?: string[]) => {
+    if (pageRouteIds && pageRouteIds.length > 0) {
+      if (checked) {
+        setSelectedRouteIds((prev) => Array.from(new Set([...prev, ...pageRouteIds])));
+      } else {
+        const pageSet = new Set(pageRouteIds);
+        setSelectedRouteIds((prev) => prev.filter((id) => !pageSet.has(id)));
+      }
     } else {
-      setSelectedRouteIds([]);
+      if (checked && filteredRoutes.length > 0) {
+        setSelectedRouteIds(filteredRoutes.map((r) => r.id));
+      } else {
+        setSelectedRouteIds([]);
+      }
     }
   };
 

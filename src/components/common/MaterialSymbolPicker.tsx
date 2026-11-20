@@ -190,7 +190,7 @@ export const MaterialSymbolPicker: React.FC<MaterialSymbolPickerProps> = ({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-1.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
               {displayedSymbols.map((item) => {
                 const isSelected = selectedIcon === item.name;
                 return (
@@ -199,17 +199,17 @@ export const MaterialSymbolPicker: React.FC<MaterialSymbolPickerProps> = ({
                     type="button"
                     onClick={() => handleSelect(item.name)}
                     className={cn(
-                      "group relative flex flex-col items-center justify-center p-2 rounded-lg border transition-all text-center cursor-pointer",
+                      "group relative flex flex-col items-center justify-center p-2 rounded-lg border min-h-[72px] overflow-hidden transition-all text-center cursor-pointer",
                       isSelected
                         ? "border-primary bg-primary/10 text-primary ring-1 ring-primary shadow-xs"
                         : "border-border/60 hover:border-primary/50 hover:bg-muted/50 text-foreground"
                     )}
                     title={item.label}
                   >
-                    <span className="material-symbols-outlined text-2xl leading-none transition-transform group-hover:scale-115">
+                    <span className="material-symbols-outlined text-2xl leading-none transition-transform group-hover:scale-110 shrink-0 select-none">
                       {item.name}
                     </span>
-                    <span className="text-[10px] mt-1.5 line-clamp-1 w-full text-muted-foreground font-medium group-hover:text-foreground">
+                    <span className="text-[10px] mt-1.5 line-clamp-1 w-full text-muted-foreground font-medium group-hover:text-foreground truncate block">
                       {item.label}
                     </span>
                     {isSelected && (

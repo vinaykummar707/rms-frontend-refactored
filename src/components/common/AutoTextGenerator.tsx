@@ -210,7 +210,7 @@ export const AutoTextGenerator: React.FC<AutoTextGeneratorProps> = ({
 
     Promise.all(
       englishCombos.map(async (combo) => {
-        if (combo.category === "Route Number" || combo.category === "Combined Format") {
+        if (combo.category === "Route Number") {
           return combo;
         }
         try {

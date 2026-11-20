@@ -28,6 +28,7 @@ import {
   ArrowUp,
   ArrowDown,
   Pencil,
+  Check,
   ListFilter,
   MapPin,
   GitBranch,
@@ -462,6 +463,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const [customViaInput, setCustomViaInput] = useState<string>("");
     const [draggedViaIdx, setDraggedViaIdx] = useState<number | null>(null);
     const [dragOverViaIdx, setDragOverViaIdx] = useState<number | null>(null);
+    const [editingViaIdx, setEditingViaIdx] = useState<number | null>(null);
+    const [editingViaName, setEditingViaName] = useState<string>("");
     const hasInitializedVia = useRef(false);
 
     const languageItems = useMemo(
@@ -1000,6 +1003,30 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
       setDraggedViaIdx(null);
       setDragOverViaIdx(null);
+    };
+
+    const handleStartEditVia = (idx: number, currentName: string) => {
+      setEditingViaIdx(idx);
+      setEditingViaName(currentName);
+    };
+
+    const handleSaveEditVia = (idx: number) => {
+      const trimmed = editingViaName.trim();
+      if (!trimmed) {
+        setEditingViaIdx(null);
+        return;
+      }
+      const updated = [...viaStops];
+      updated[idx] = { ...updated[idx], name: trimmed };
+      setViaStops(updated);
+      setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      setEditingViaIdx(null);
+      setEditingViaName("");
+    };
+
+    const handleCancelEditVia = () => {
+      setEditingViaIdx(null);
+      setEditingViaName("");
     };
 
     // Auto-preview loop timer
@@ -2668,7 +2695,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         return (
                           <div
                             key={via.id || idx}
-                            draggable
+                            draggable={editingViaIdx === null}
                             onDragStart={() => handleViaDragStart(idx)}
                             onDragOver={(e) => handleViaDragOver(e, idx)}
                             onDrop={() => handleViaDrop(idx)}
@@ -2681,50 +2708,99 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                                 : "border-border bg-muted/40 hover:bg-muted/80"
                             )}
                           >
-                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                              <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60 cursor-grab active:cursor-grabbing shrink-0" />
-                              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary shrink-0">
-                                {idx + 1}
-                              </span>
-                              <div className="flex flex-col min-w-0">
-                                <span className="font-medium text-foreground truncate text-xs">
-                                  {via.name}
+                            {editingViaIdx === idx ? (
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary shrink-0">
+                                  {idx + 1}
                                 </span>
-                                {via.name_kn && (
-                                  <span className="text-[10px] text-muted-foreground truncate">
-                                    {via.name_kn}
-                                  </span>
-                                )}
+                                <Input
+                                  value={editingViaName}
+                                  onChange={(e) => setEditingViaName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      handleSaveEditVia(idx);
+                                    } else if (e.key === "Escape") {
+                                      handleCancelEditVia();
+                                    }
+                                  }}
+                                  autoFocus
+                                  className="h-6 text-xs px-1.5 py-0.5 flex-1"
+                                  placeholder="Edit waypoint name..."
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditVia(idx)}
+                                  className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-emerald-500/10 text-emerald-600 cursor-pointer"
+                                  title="Save changes"
+                                >
+                                  <Check className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelEditVia}
+                                  className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted text-muted-foreground cursor-pointer"
+                                  title="Cancel edit"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-0.5 shrink-0">
-                              <button
-                                type="button"
-                                disabled={idx === 0}
-                                onClick={() => handleMoveViaUp(idx)}
-                                className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-                                title="Move waypoint up"
-                              >
-                                <ArrowUp className="h-3 w-3" />
-                              </button>
-                              <button
-                                type="button"
-                                disabled={idx === viaStops.length - 1}
-                                onClick={() => handleMoveViaDown(idx)}
-                                className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
-                                title="Move waypoint down"
-                              >
-                                <ArrowDown className="h-3 w-3" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveVia(idx)}
-                                className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive cursor-pointer"
-                                title="Remove waypoint"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground/60 cursor-grab active:cursor-grabbing shrink-0" />
+                                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary shrink-0">
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex flex-col min-w-0">
+                                    <span className="font-medium text-foreground truncate text-xs">
+                                      {via.name}
+                                    </span>
+                                    {via.name_kn && (
+                                      <span className="text-[10px] text-muted-foreground truncate">
+                                        {via.name_kn}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditVia(idx, via.name)}
+                                    className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground cursor-pointer"
+                                    title="Edit waypoint name"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={() => handleMoveViaUp(idx)}
+                                    className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                                    title="Move waypoint up"
+                                  >
+                                    <ArrowUp className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === viaStops.length - 1}
+                                    onClick={() => handleMoveViaDown(idx)}
+                                    className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-background text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+                                    title="Move waypoint down"
+                                  >
+                                    <ArrowDown className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveVia(idx)}
+                                    className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive cursor-pointer"
+                                    title="Remove waypoint"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </div>
                         );
                       })

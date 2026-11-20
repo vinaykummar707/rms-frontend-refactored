@@ -760,7 +760,7 @@ export function OrganizationsPage() {
                 </span>
 
                 {/* Primary Modules Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   {/* Card 1: PIS */}
                   <div
                     role="checkbox"
@@ -903,46 +903,6 @@ export function OrganizationsPage() {
                       Live GPS telemetry & fleet schedule tracking
                     </p>
                   </div>
-
-                  {/* Card 4: Account Operational Status */}
-                  <div
-                    role="checkbox"
-                    aria-checked={editActive}
-                    tabIndex={0}
-                    onClick={() => setEditActive(!editActive)}
-                    onKeyDown={(e) => {
-                      if (e.key === " " || e.key === "Enter") {
-                        e.preventDefault();
-                        setEditActive(!editActive);
-                      }
-                    }}
-                    className={cn(
-                      "flex flex-col justify-between rounded-lg border p-3 cursor-pointer transition-all select-none outline-none focus-visible:ring-2 focus-visible:ring-ring text-left",
-                      editActive
-                        ? "border-emerald-600/40 bg-emerald-500/5 text-foreground ring-1 ring-emerald-500/20 shadow-2xs"
-                        : "border-border bg-card/60 hover:bg-muted/40 text-muted-foreground"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 font-semibold text-xs text-foreground">
-                        <CheckCircle2
-                          className={cn(
-                            "h-4 w-4 shrink-0",
-                            editActive ? "text-emerald-600" : "text-muted-foreground"
-                          )}
-                        />
-                        <span>Active Account</span>
-                      </div>
-                      <Checkbox
-                        checked={editActive}
-                        tabIndex={-1}
-                        className="pointer-events-none mt-0.5"
-                      />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-2 leading-tight">
-                      {editActive ? "Tenant is active and operational" : "Tenant access is suspended"}
-                    </p>
-                  </div>
                 </div>
 
                 {editModuleError && (
@@ -1073,7 +1033,17 @@ export function OrganizationsPage() {
               </div>
 
               {/* Dialog Footer */}
-              <DialogFooter className="pt-3 border-t border-border">
+              <DialogFooter className="pt-3 border-t border-border flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingOrg(null)}
+                  disabled={isUpdating || isValidatingDuplicates}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
                 <Button
                   type="submit"
                   size="sm"
@@ -1149,7 +1119,17 @@ export function OrganizationsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="pt-4 border-t border-border">
+          <DialogFooter className="pt-4 border-t border-border flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setStatusConfirmOrg(null)}
+              disabled={isTogglingStatus}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
             <Button
               type="button"
               variant={statusConfirmOrg?.active ? "destructive" : "default"}
@@ -1210,7 +1190,17 @@ export function OrganizationsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <DialogFooter className="pt-4 border-t border-border">
+          <DialogFooter className="pt-4 border-t border-border flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteConfirmOrg(null)}
+              disabled={isDeleting}
+              className="text-xs"
+            >
+              Cancel
+            </Button>
             <Button
               type="button"
               variant="destructive"

@@ -32,8 +32,6 @@ import {
   Copy,
   ArrowLeftRight,
   Trash2,
-  Check,
-  X,
   Tag,
   Layers,
   Calendar,
@@ -88,7 +86,7 @@ export interface RouteTableProps {
   routes: IRoute[];
   selectedRouteIds?: string[];
   onSelectedChange?: (routeId: string, selected: boolean) => void;
-  onSelectAllChange?: (checked: boolean) => void;
+  onSelectAllChange?: (checked: boolean, pageRouteIds?: string[]) => void;
   highlightedRouteId?: string | null;
   onEdit?: (routeId: string) => void;
   onDuplicate?: (routeId: string, suffix: string) => void;
@@ -146,16 +144,22 @@ export function RouteTable({
     }
   }, [highlightedRouteId, routes, pageSize]);
 
-  const allSelected =
-    routes.length > 0 && selectedRouteIds.length === routes.length;
-  const someSelected =
-    selectedRouteIds.length > 0 && selectedRouteIds.length < routes.length;
-
   const paginatedRoutes = useMemo(() => {
     if (!showPagination) return routes;
     const start = (currentPage - 1) * pageSize;
     return routes.slice(start, start + pageSize);
   }, [routes, currentPage, pageSize, showPagination]);
+
+  const currentPageRouteIds = useMemo(
+    () => paginatedRoutes.map((r) => r.id),
+    [paginatedRoutes]
+  );
+
+  const allPageSelected =
+    currentPageRouteIds.length > 0 &&
+    currentPageRouteIds.every((id) => selectedSet.has(id));
+  const somePageSelected =
+    currentPageRouteIds.some((id) => selectedSet.has(id)) && !allPageSelected;
 
   const pageNumbers = useMemo(() => {
     return getPageNumbers(currentPage, totalPages);
@@ -175,12 +179,12 @@ export function RouteTable({
               {/* Checkbox Column */}
               <TableHead className="w-10 pl-3.5 pr-1">
                 <Checkbox
-                  checked={allSelected}
-                  indeterminate={someSelected}
+                  checked={allPageSelected}
+                  indeterminate={somePageSelected}
                   onCheckedChange={(checked: boolean) => {
-                    onSelectAllChange?.(Boolean(checked));
+                    onSelectAllChange?.(Boolean(checked), currentPageRouteIds);
                   }}
-                  aria-label="Select all routes"
+                  aria-label="Select visible routes on this page"
                 />
               </TableHead>
 
@@ -199,9 +203,9 @@ export function RouteTable({
                 Destination
               </TableHead>
 
-              {/* Split Route */}
-              <TableHead className="hidden md:table-cell min-w-[95px] text-center font-semibold text-xs text-foreground">
-                Split Route
+              {/* Via */}
+              <TableHead className="min-w-[130px] font-semibold text-xs text-foreground">
+                Via
               </TableHead>
 
               {/* Version */}
@@ -243,8 +247,8 @@ export function RouteTable({
                   <TableCell className="min-w-[130px]">
                     <Skeleton className="h-4 w-24" />
                   </TableCell>
-                  <TableCell className="hidden md:table-cell text-center">
-                    <Skeleton className="h-5 w-12 mx-auto rounded-full" />
+                  <TableCell className="min-w-[130px]">
+                    <Skeleton className="h-4 w-24" />
                   </TableCell>
                   <TableCell className="hidden sm:table-cell text-center">
                     <Skeleton className="h-5 w-12 mx-auto rounded-full" />
@@ -348,24 +352,14 @@ export function RouteTable({
                       </span>
                     </TableCell>
 
-                    {/* Split Route */}
-                    <TableCell className="hidden md:table-cell min-w-[95px] text-center py-3">
-                      <Badge
-                        variant={route.is_split_route ? "default" : "outline"}
-                        className="gap-1 font-medium text-[11px] h-5 px-2"
+                    {/* Via */}
+                    <TableCell className="min-w-[130px] py-3">
+                      <span
+                        className="text-xs text-muted-foreground font-medium truncate block max-w-[160px]"
+                        title={route.via || undefined}
                       >
-                        {route.is_split_route ? (
-                          <>
-                            <Check className="h-3 w-3" />
-                            <span>Yes</span>
-                          </>
-                        ) : (
-                          <>
-                            <X className="h-3 w-3 text-muted-foreground" />
-                            <span>No</span>
-                          </>
-                        )}
-                      </Badge>
+                        {route.via || "—"}
+                      </span>
                     </TableCell>
 
                     {/* Version */}

@@ -152,8 +152,31 @@ export function STUOnboardingWizardDialog({
     setAdminPassword("");
   };
 
+  const [showDiscardAlert, setShowDiscardAlert] = useState(false);
+
+  const isFormDirty =
+    currentStep > 1 ||
+    Boolean(
+      name.trim() ||
+      email.trim() ||
+      phone.trim() ||
+      regions.length > 0 ||
+      depots.length > 0 ||
+      adminEmail.trim()
+    );
+
   const handleClose = () => {
     if (isSubmitting) return;
+    if (isFormDirty) {
+      setShowDiscardAlert(true);
+      return;
+    }
+    resetForm();
+    onOpenChange(false);
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowDiscardAlert(false);
     resetForm();
     onOpenChange(false);
   };
@@ -500,6 +523,7 @@ export function STUOnboardingWizardDialog({
   ];
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleOpenChange} disablePointerDismissal={true}>
       <DialogContent className="sm:max-w-3xl p-6">
         {/* Dialog Header */}
@@ -1002,8 +1026,8 @@ export function STUOnboardingWizardDialog({
 
             {/* Quick-Add Card */}
             <Card className="p-3 border bg-muted/20 shadow-none">
-              <div className="flex items-start gap-2">
-                <div className="flex-1 space-y-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5">
+                <div className="flex-1 min-w-0 space-y-1">
                   <Label htmlFor="region-name-input" className="text-xs font-semibold">
                     Region Name *
                   </Label>
@@ -1024,21 +1048,20 @@ export function STUOnboardingWizardDialog({
                     placeholder="e.g. Bangalore Central Region, Mysore Region..."
                     aria-invalid={Boolean(errors.newRegionName)}
                     autoFocus
+                    className="h-9 text-xs"
                   />
                   <FieldErrorText message={errors.newRegionName} />
                 </div>
 
-                <div className="pt-5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={handleAddRegion}
-                    className="h-8 text-xs font-semibold gap-1 px-4"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Region</span>
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleAddRegion}
+                  className="h-9 text-xs font-semibold gap-1 px-4 shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Region</span>
+                </Button>
               </div>
             </Card>
 
@@ -1127,41 +1150,37 @@ export function STUOnboardingWizardDialog({
 
             {/* Quick-Add Card */}
             <Card className="p-3 border bg-muted/20 shadow-none">
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                 <div className="sm:col-span-5 space-y-1">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5">
+                <div className="flex-1 sm:w-2/5 min-w-0 space-y-1">
                   <Label htmlFor="depot-region-select" className="text-xs font-semibold">
                     Parent Region *
                   </Label>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <Select
-                        value={newDepotRegion}
-                        onValueChange={(val) => {
-                          setNewDepotRegion(val || "");
-                          clearError("newDepotRegion");
-                        }}
-                      >
-                        <SelectTrigger
-                          id="depot-region-select"
-                          aria-invalid={Boolean(errors.newDepotRegion)}
-                          className="h-8 w-full text-xs"
-                        >
-                          <SelectValue placeholder="Select parent region" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {regions.map((r) => (
-                            <SelectItem key={r.name} value={r.name}>
-                              {r.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                   
-                  </div>
+                  <Select
+                    value={newDepotRegion}
+                    onValueChange={(val) => {
+                      setNewDepotRegion(val || "");
+                      clearError("newDepotRegion");
+                    }}
+                  >
+                    <SelectTrigger
+                      id="depot-region-select"
+                      aria-invalid={Boolean(errors.newDepotRegion)}
+                      className="h-9 w-full text-xs"
+                    >
+                      <SelectValue placeholder="Select parent region" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {regions.map((r) => (
+                        <SelectItem key={r.name} value={r.name}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FieldErrorText message={errors.newDepotRegion} />
                 </div>
-                <div className="sm:col-span-5 space-y-1">
+
+                <div className="flex-1 sm:w-2/5 min-w-0 space-y-1">
                   <Label htmlFor="depot-name-input" className="text-xs font-semibold">
                     Depot Name *
                   </Label>
@@ -1182,21 +1201,20 @@ export function STUOnboardingWizardDialog({
                     placeholder="e.g. Depot 28 - Hebbal"
                     aria-invalid={Boolean(errors.newDepotName)}
                     autoFocus
+                    className="h-9 text-xs"
                   />
-                  
                   <FieldErrorText message={errors.newDepotName} />
-                  
                 </div>
-                      <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleAddDepot}
-                      className="h-8 col-span-2 text-xs font-semibold gap-1 px-3 shrink-0"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>Add Depot</span>
-                    </Button>
-               
+
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleAddDepot}
+                  className="h-9 text-xs font-semibold gap-1 px-4 shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Depot</span>
+                </Button>
               </div>
             </Card>
 
@@ -1510,6 +1528,44 @@ export function STUOnboardingWizardDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Discard Confirmation Dialog */}
+    <Dialog open={showDiscardAlert} onOpenChange={setShowDiscardAlert}>
+      <DialogContent className="sm:max-w-md p-6">
+        <DialogHeader>
+          <div className="h-10 w-10 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2">
+            <AlertCircle className="h-5 w-5" />
+          </div>
+          <DialogTitle className="text-base font-bold">
+            Discard Organization Setup?
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground pt-1">
+            You have unsaved changes in the setup wizard. Closing now will discard all entered organization details, regions, and depots.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="pt-4 border-t border-border flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDiscardAlert(false)}
+            className="text-xs"
+          >
+            Continue Setup
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={handleConfirmDiscard}
+            className="text-xs font-semibold"
+          >
+            Discard & Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

@@ -56,7 +56,6 @@ import {
   AlertTriangle,
   Loader2,
   X,
-  MapIcon,
 } from "lucide-react";
 import { Field, FieldLabel } from "@/components/ui/field";
 
@@ -323,6 +322,7 @@ export function RoutesPage() {
       const split2 = (route.route_number_2 || "").toLowerCase();
       const source = (route.source || "").toLowerCase();
       const dest = (route.destination || "").toLowerCase();
+      const via = (route.via || "").toLowerCase();
       const email = (route.created_by_user?.email || "").toLowerCase();
 
       return (
@@ -331,6 +331,7 @@ export function RoutesPage() {
         split2.includes(search) ||
         source.includes(search) ||
         dest.includes(search) ||
+        via.includes(search) ||
         email.includes(search)
       );
     });
@@ -485,11 +486,20 @@ export function RoutesPage() {
     );
   };
 
-  const handleSelectAllChange = (checked: boolean) => {
-    if (checked && filteredRoutes.length > 0) {
-      setSelectedRouteIds(filteredRoutes.map((r) => r.id));
+  const handleSelectAllChange = (checked: boolean, pageRouteIds?: string[]) => {
+    if (pageRouteIds && pageRouteIds.length > 0) {
+      if (checked) {
+        setSelectedRouteIds((prev) => Array.from(new Set([...prev, ...pageRouteIds])));
+      } else {
+        const pageSet = new Set(pageRouteIds);
+        setSelectedRouteIds((prev) => prev.filter((id) => !pageSet.has(id)));
+      }
     } else {
-      setSelectedRouteIds([]);
+      if (checked && filteredRoutes.length > 0) {
+        setSelectedRouteIds(filteredRoutes.map((r) => r.id));
+      } else {
+        setSelectedRouteIds([]);
+      }
     }
   };
 
@@ -727,7 +737,7 @@ export function RoutesPage() {
                 >
                   <SelectTrigger className="h-9 text-xs w-full">
                     <div className="flex items-center gap-1.5 truncate">
-                      <MapIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <Box className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       <SelectValue placeholder="Select region...">
                         {(val: string | null) => {
                           if (!val) return null;

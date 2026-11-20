@@ -66,6 +66,36 @@ export async function createReturnRoute(
     }
   }
 
+  // 1b. Reverse via waypoints
+  let reversedVia = originalRoute.via || "";
+  if (originalRoute.via && typeof originalRoute.via === "string") {
+    const isArrow = originalRoute.via.includes(" -> ");
+    const isHyphen = originalRoute.via.includes(" - ");
+    const isComma = originalRoute.via.includes(",");
+    let separator = ", ";
+    let splitter: RegExp | string = /[,;-]/;
+
+    if (isArrow) {
+      separator = " -> ";
+      splitter = " -> ";
+    } else if (isHyphen) {
+      separator = " - ";
+      splitter = " - ";
+    } else if (isComma) {
+      separator = ", ";
+      splitter = ",";
+    }
+
+    const viaParts = originalRoute.via
+      .split(splitter)
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+
+    if (viaParts.length > 1) {
+      reversedVia = viaParts.reverse().join(separator);
+    }
+  }
+
   // 2. Format return route number
   const suffix = routeNumberSuffix === "(Return)" ? "R" : routeNumberSuffix;
   const newRouteNumber = originalRoute.route_number?.endsWith("R")
@@ -91,11 +121,16 @@ export async function createReturnRoute(
           .join(oldSrc)
           .split(PLACEHOLDER)
           .join(oldDest);
-        swappedConfig =
-          typeof originalRoute.config === "string"
-            ? configStr
-            : JSON.parse(configStr);
       }
+      if (originalRoute.via && reversedVia && originalRoute.via !== reversedVia) {
+        const oldViaEsc = JSON.stringify(originalRoute.via).slice(1, -1);
+        const newViaEsc = JSON.stringify(reversedVia).slice(1, -1);
+        configStr = configStr.split(oldViaEsc).join(newViaEsc);
+      }
+      swappedConfig =
+        typeof originalRoute.config === "string"
+          ? configStr
+          : JSON.parse(configStr);
     } catch (err) {
       console.error("Error swapping source/destination in return route config:", err);
     }
@@ -105,6 +140,7 @@ export async function createReturnRoute(
     ...routeWithoutId,
     source: originalRoute.destination || originalRoute.source,
     destination: originalRoute.source || originalRoute.destination,
+    via: reversedVia,
     stops: reversedStops,
     config: swappedConfig,
     route_number: newRouteNumber,

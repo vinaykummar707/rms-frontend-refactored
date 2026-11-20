@@ -229,7 +229,7 @@ export function AppSidebar() {
                         render={<Link to={item.url} />}
                         isActive={isActive}
                         tooltip={item.title}
-                        className={`h-8.5 gap-2.5 rounded-lg px-2.5  transition-colors ${
+                        className={`h-8.5 gap-2.5 rounded-lg px-2.5 transition-colors cursor-pointer select-none ${
                           isActive
                             ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                             : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"

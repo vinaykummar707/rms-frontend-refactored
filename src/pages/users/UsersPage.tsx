@@ -1272,9 +1272,17 @@ export function UsersPage() {
 
                 {/* Password Input (Editable in both Create & Edit) */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="user-password" className="text-xs font-semibold">
-                    {editingUser ? "Password (Editable)" : "Account Password *"}
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="user-password" className="text-xs font-semibold">
+                      {editingUser ? "Password (Editable)" : "Account Password *"}
+                    </Label>
+                    {editingUser && editingUser.password && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground font-medium">Current:</span>
+                        <PasswordViewerCell password={editingUser.password} />
+                      </div>
+                    )}
+                  </div>
                   <div className="relative">
                     <Input
                       id="user-password"
@@ -1355,6 +1363,11 @@ export function UsersPage() {
                     </SelectContent>
                   </Select>
                   <FieldErrorText message={formRoleError} />
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {isSuperAdmin(loggedInUser)
+                      ? "Super Admins can provision Organization Admins, Region Admins, and Depot Admins."
+                      : "Organization Admins can provision Region Admins and Depot Admins for this tenant."}
+                  </p>
                 </div>
 
                 {/* Region Select (Visible when Region Admin or Depot Admin selected) */}
@@ -1489,9 +1502,6 @@ export function UsersPage() {
                     onClick={() => {
                       const nextPIS = !formPIS;
                       setFormPIS(nextPIS);
-                      if (nextPIS && !formV1 && !formV2) {
-                        setFormV2(true);
-                      }
                       setFormRouteEngineError("");
                       if (formModuleError) setFormModuleError("");
                     }}
@@ -1500,9 +1510,6 @@ export function UsersPage() {
                         e.preventDefault();
                         const nextPIS = !formPIS;
                         setFormPIS(nextPIS);
-                        if (nextPIS && !formV1 && !formV2) {
-                          setFormV2(true);
-                        }
                         setFormRouteEngineError("");
                         if (formModuleError) setFormModuleError("");
                       }
@@ -1611,13 +1618,13 @@ export function UsersPage() {
 
                 <FieldErrorText message={formModuleError} />
 
-                {/* Section 2: PIS Route Display Engines (shown when PIS enabled) */}
+                {/* Section 2: Allowed Route Engines (shown when PIS enabled) */}
                 {formPIS && (
                   <div className="space-y-3 pt-3 border-t border-border/80 animate-in fade-in-50 duration-200">
                     <div>
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-foreground block">
-                          PIS Route Display Engines *
+                          Allowed Route Engines
                         </span>
                         <span className="text-[10px] text-muted-foreground font-medium">
                           PIS Sub-Features

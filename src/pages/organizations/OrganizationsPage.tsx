@@ -1195,7 +1195,7 @@ export function OrganizationsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setDeleteConfirmOrg(null)}
+              onClick={() => setDeletingOrg(null)}
               disabled={isDeleting}
               className="text-xs"
             >

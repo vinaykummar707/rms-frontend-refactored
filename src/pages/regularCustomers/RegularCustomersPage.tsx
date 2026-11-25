@@ -786,7 +786,7 @@ export function RegularCustomersPage() {
                       {(customer as any).PIS && (
                         <Badge
                           variant="outline"
-                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                          className="text-[9px] h-4.5 px-1.5 font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
                         >
                           PIS
                         </Badge>
@@ -794,7 +794,7 @@ export function RegularCustomersPage() {
                       {(customer as any).PAS && (
                         <Badge
                           variant="outline"
-                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                          className="text-[9px] h-4.5 px-1.5 font-bold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30"
                         >
                           PAS
                         </Badge>
@@ -802,7 +802,7 @@ export function RegularCustomersPage() {
                       {(customer as any).ITMS && (
                         <Badge
                           variant="outline"
-                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                          className="text-[9px] h-4.5 px-1.5 font-bold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30"
                         >
                           ITMS
                         </Badge>

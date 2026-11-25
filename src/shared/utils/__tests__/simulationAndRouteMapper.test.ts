@@ -64,13 +64,13 @@ describe("Simulation Utilities & Route Config Mapper", () => {
     expect(sideText).toBe("500-D");
 
     const singleText = getRoutePresetZoneText("single", "text", values);
-    expect(singleText).toBe("500-D - HEBBAL ↔ SILK BOARD - MARATHAHALLI");
+    expect(singleText).toBe("500-D - HEBBAL ↔ SILK BOARD - VIA MARATHAHALLI");
 
     const upperText = getRoutePresetZoneText("three", "upperHalfText", values);
     expect(upperText).toBe("HEBBAL ↔ SILK BOARD");
 
     const lowerText = getRoutePresetZoneText("three", "lowerHalfText", values);
-    expect(lowerText).toBe("MARATHAHALLI");
+    expect(lowerText).toBe("VIA MARATHAHALLI");
   });
 
   it("maps V2 route configuration into V1 route payload and back", () => {

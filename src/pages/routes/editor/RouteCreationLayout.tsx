@@ -304,6 +304,10 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       );
     }, [checkSuperAdmin, canAccessModule, canAccessRole]);
 
+    const isPISOnly = useMemo(() => {
+      return !checkSuperAdmin && canAccessModule("PIS") && !canAccessModule("PAS");
+    }, [checkSuperAdmin, canAccessModule]);
+
     // Global Stores
     const { selectedTab, setSelectedTab } = useTabsStore();
     const { selectedSimulationIndex, setSelectedSimulationIndex } = useSimulationStore();
@@ -906,7 +910,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         };
         const updated = [...viaStops, newVia];
         setViaStops(updated);
-        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
         setSelectedViaPickerId("");
       },
       [depotStops, viaStops, setValue]
@@ -915,7 +919,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
     const handleAddCustomVia = useCallback(() => {
       const trimmed = customViaInput.trim();
       if (!trimmed) return;
-      const parts = trimmed.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+      const parts = trimmed.split(/[,;]|\s+-\s+/).map((s) => s.trim()).filter(Boolean);
       const newItems: ViaStopItem[] = [];
       for (const part of parts) {
         const pNorm = part.toLowerCase();
@@ -939,7 +943,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       if (newItems.length > 0) {
         const updated = [...viaStops, ...newItems];
         setViaStops(updated);
-        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
         setCustomViaInput("");
       }
     }, [customViaInput, viaStops, sourceNorm, destNorm, setValue]);
@@ -948,7 +952,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       (index: number) => {
         const updated = viaStops.filter((_, idx) => idx !== index);
         setViaStops(updated);
-        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
       },
       [viaStops, setValue]
     );
@@ -961,7 +965,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         updated[index - 1] = updated[index];
         updated[index] = temp;
         setViaStops(updated);
-        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
       },
       [viaStops, setValue]
     );
@@ -974,7 +978,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
         updated[index + 1] = updated[index];
         updated[index] = temp;
         setViaStops(updated);
-        setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+        setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
       },
       [viaStops, setValue]
     );
@@ -1000,7 +1004,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       const [item] = updated.splice(draggedViaIdx, 1);
       updated.splice(dropIndex, 0, item);
       setViaStops(updated);
-      setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
       setDraggedViaIdx(null);
       setDragOverViaIdx(null);
     };
@@ -1019,7 +1023,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       const updated = [...viaStops];
       updated[idx] = { ...updated[idx], name: trimmed };
       setViaStops(updated);
-      setValue("via", updated.map((v) => v.name).join(", "), { shouldDirty: true });
+      setValue("via", updated.map((v) => v.name).join(" - "), { shouldDirty: true });
       setEditingViaIdx(null);
       setEditingViaName("");
     };
@@ -1029,14 +1033,35 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       setEditingViaName("");
     };
 
-    // Auto-preview loop timer
+    // Auto-preview loop timer matching slide display duration / timing
     useEffect(() => {
       if (!isCycling || simulations.length <= 1) return;
-      const interval = setInterval(() => {
+
+      const currentSlide = simulations[selectedSimulationIndex];
+      let slideDuration = 3500;
+      if (currentSlide) {
+        const customDuration =
+          (currentSlide as any).displayTime ||
+          (currentSlide as any).duration ||
+          (currentSlide as any).time;
+        if (typeof customDuration === "number" && customDuration > 0) {
+          slideDuration = customDuration >= 100 ? customDuration : customDuration * 1000;
+        } else {
+          const texts = currentSlide.texts as Record<string, any> | undefined;
+          const textConfig = texts?.text || texts?.upperHalfText;
+          if (textConfig?.scrollType && textConfig.scrollType !== "Fixed") {
+            const speed = Number(textConfig.scrollSpeed) || 4;
+            slideDuration = Math.max(2500, 7500 - speed * 500);
+          }
+        }
+      }
+
+      const timer = setTimeout(() => {
         setSelectedSimulationIndex((prev) => (prev + 1) % simulations.length);
-      }, 3500);
-      return () => clearInterval(interval);
-    }, [isCycling, simulations.length, setSelectedSimulationIndex]);
+      }, slideDuration);
+
+      return () => clearTimeout(timer);
+    }, [isCycling, simulations, selectedSimulationIndex, setSelectedSimulationIndex]);
 
     // Keyboard shortcut 'r' for return route toggle
     useEffect(() => {
@@ -1073,11 +1098,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
       if (viaStops.length > 1) {
         const reversed = [...viaStops].reverse();
         setViaStops(reversed);
-        setValue("via", reversed.map((v) => v.name).join(", "), { shouldDirty: true });
+        setValue("via", reversed.map((v) => v.name).join(" - "), { shouldDirty: true });
       } else {
-        const rawViaList = (getValues("via") || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        const rawViaList = (getValues("via") || "").split(/[,;]|\s+-\s+/).map((s) => s.trim()).filter(Boolean);
         if (rawViaList.length > 1) {
-          setValue("via", rawViaList.reverse().join(", "), { shouldDirty: true });
+          setValue("via", rawViaList.reverse().join(" - "), { shouldDirty: true });
         }
       }
       setValue("return", !isReturn, { shouldDirty: true });
@@ -2675,7 +2700,8 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                         variant="secondary"
                         className="h-8 px-2.5 text-xs font-medium shrink-0"
                         onClick={handleAddCustomVia}
-                        disabled={!customViaInput.trim()}
+                        disabled={!customViaInput.trim() || isPISOnly}
+                        title={isPISOnly ? "Stop/Via creation is disabled for PIS-only profiles" : undefined}
                       >
                         <Plus className="h-3.5 w-3.5 mr-1" /> Add
                       </Button>
@@ -3875,7 +3901,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
             {/* ------------------------------------------------------- */}
             <div className="flex flex-col flex-1 min-w-[340px] bg-background overflow-hidden">
               {/* Header */}
-              <div className="flex min-h-11 flex-none flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-border px-4 py-1.5 bg-card">
+              <div className="flex min-h-11 flex-none flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-border px-3 py-1.5 bg-card">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-bold text-foreground">
                     {selectedTab === Tab.STOPS ? "Stop Announcement Simulation" : "Slides Loop"}
@@ -3886,7 +3912,7 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {selectedTab === Tab.STOPS ? (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/20 text-xs font-semibold text-primary">
                       <Radio className="h-3 w-3 animate-pulse" /> Live Simulator
@@ -4017,10 +4043,11 @@ export const RouteCreationLayout = React.forwardRef<HTMLDivElement, RouteCreatio
                       <Button
                         variant="destructive"
                         size="sm"
-                        className="h-7 text-xs font-medium px-2.5"
+                        className="h-7 text-xs font-medium px-2 shrink-0 cursor-pointer"
                         onClick={handleClearAllSlides}
                       >
-                        <Trash2 className="h-3 w-3 mr-1" /> Clear All
+                        <Trash2 className="h-3 w-3 sm:mr-1" />
+                        <span className="hidden sm:inline">Clear All</span>
                       </Button>
                     </ActionTooltip>
                   )}

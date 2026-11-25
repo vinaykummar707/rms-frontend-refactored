@@ -56,6 +56,7 @@ import {
   AlertTriangle,
   Loader2,
   X,
+  Search,
 } from "lucide-react";
 import { Field, FieldLabel } from "@/components/ui/field";
 
@@ -701,27 +702,29 @@ export function RoutesPage() {
         {/* Left Side: Search & Filter Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1 max-w-3xl flex-wrap">
           {/* Search Input */}
-          <div className=" min-w-[220px]">
+          <div className="min-w-[220px]">
             <Field>
               <FieldLabel>Search</FieldLabel>
-
-              <Input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by route number, source, destination, or creator..."
-                className="pl-9 pr-8 h-9 text-xs"
-              />
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by route number, source, destination, or creator..."
+                  className="pl-9 pr-8 h-9 text-xs"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground cursor-pointer"
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </Field>
-            {searchTerm && (
-              <button
-                type="button"
-                onClick={() => setSearchTerm("")}
-                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
           </div>
 
           {/* Region Select */}

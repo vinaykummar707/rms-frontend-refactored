@@ -907,7 +907,7 @@ export function UsersPage() {
         </div>
       ) : isLoading ? (
         /* Loading Skeletons */
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-3 gap-3.5">
           {Array.from({ length: 10 }).map((_, i) => (
             <Card key={i} className="space-y-4 p-4">
               <div className="flex items-center gap-2.5">
@@ -966,7 +966,7 @@ export function UsersPage() {
         </div>
       ) : (
         /* Cards Grid */
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3.5">
           {filteredUsers.map((userItem) => {
             const email = userItem.email || "Unknown";
             const initials = email.slice(0, 2).toUpperCase();
@@ -1108,7 +1108,7 @@ export function UsersPage() {
                       {(userItem as any).PIS && (
                         <Badge
                           variant="outline"
-                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                          className="text-[9px] h-4.5 px-1.5 font-bold bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
                         >
                           PIS
                         </Badge>
@@ -1116,7 +1116,7 @@ export function UsersPage() {
                       {(userItem as any).PAS && (
                         <Badge
                           variant="outline"
-                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                          className="text-[9px] h-4.5 px-1.5 font-bold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30"
                         >
                           PAS
                         </Badge>
@@ -1124,7 +1124,7 @@ export function UsersPage() {
                       {(userItem as any).ITMS && (
                         <Badge
                           variant="outline"
-                          className="text-[9px] h-4 px-1 text-muted-foreground"
+                          className="text-[9px] h-4.5 px-1.5 font-bold bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30"
                         >
                           ITMS
                         </Badge>

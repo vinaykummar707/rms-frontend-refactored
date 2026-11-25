@@ -131,7 +131,7 @@ export const getRoutePresetZoneText = (
         const singleRouteText = [
           routeNum,
           joinSourceDestination(values.source, values.destination, values.separation),
-          values.via,
+          values.via ? (values.via.toUpperCase().startsWith("VIA") ? values.via : `VIA ${values.via}`) : undefined,
         ]
           .filter(Boolean)
           .join(" - ");
@@ -139,14 +139,14 @@ export const getRoutePresetZoneText = (
       }
       const routeText = joinRouteParts(
         joinSourceDestination(values.source, values.destination, values.separation),
-        values.via
+        values.via ? (values.via.toUpperCase().startsWith("VIA") ? values.via : `VIA ${values.via}`) : undefined
       );
       return routeText;
     }
     case "upperHalfText":
       return joinSourceDestination(values.source, values.destination, values.separation);
     case "lowerHalfText":
-      return values.via || "";
+      return values.via ? (values.via.toUpperCase().startsWith("VIA") ? values.via : `VIA ${values.via}`) : "";
     case "sideText":
       return values.routeNumber || "";
     case "routeNumber1":

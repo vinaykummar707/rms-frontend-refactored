@@ -371,11 +371,6 @@ export function DepotsPage() {
           <Badge variant="secondary" className="font-semibold text-xs px-2 py-0.5">
             {filteredDepots.length} Total
           </Badge>
-          {selectedRegion && (
-            <Badge variant="outline" className="font-semibold text-xs px-2 py-0.5 border-primary/30 text-primary">
-              Region: {selectedRegion.name}
-            </Badge>
-          )}
         </div>
         <p className="text-xs text-muted-foreground">
           Manage operating terminals, fleet sheds, and division allocations for{" "}
